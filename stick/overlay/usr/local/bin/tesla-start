@@ -1,0 +1,9 @@
+#!/bin/sh
+# Start the X server with QtCar (tesla-session) on this console; returns when it ends.
+flag=${XDG_RUNTIME_DIR:-/tmp}/tesla-console
+rm -f "$flag"
+log=$HOME/mcu2-desktop/logs/session.log
+mkdir -p "$(dirname "$log")"
+echo "=== $(date '+%F %T') tesla-start" >>"$log"
+startx /usr/local/bin/tesla-session -- -nolisten tcp -keeptty >>"$log" 2>&1
+[ -e "$flag" ] || echo "the X server ended" >"$flag"

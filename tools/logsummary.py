@@ -16,7 +16,11 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOGS = os.path.join(os.path.dirname(HERE), "logs")
 # logs of the host-side helpers; every other *.log in a run is a firmware service
-HELPER_LOGS = {"qtcar", "can", "gps", "audio", "camera", "x11vnc", "xvfb", "events", "can-db", "audio-clock", "bt-bridge"}
+HELPER_LOGS = {"qtcar", "can", "gps", "audio", "audio-browser", "camera", "x11vnc", "xvfb",
+               "x11vnc-cluster", "xvfb-cluster", "events", "can-db", "audio-clock",
+               "bt-bridge", "browser-touch", "media-touch", "theater-touch", "theater-control",
+               "host-connectivity",
+               "game-windows", "cluster", "speech-state", "syslog"}
 # service restart lines of the loops in ./tesla start (and start_all.sh before it)
 EXIT_RE = re.compile(r"^(?:tesla|start_all): (\S+) exited \((\d+)\).*?(?:\[t=(\d+)\])?$")
 # known problems: (regex, text); counted per log
@@ -90,7 +94,10 @@ def service_status(run):
         if pid.isdigit():
             try:
                 with open(f"/proc/{pid}/cmdline", "rb") as f:
-                    running.add(os.path.basename(f.read().split(b"\0")[0]).decode(errors="replace"))
+                    # Chromium rewrites argv with a space-separated process title, replacing
+                    # even the first NUL. Keep the executable token for status detection.
+                    argv0 = f.read().split(b"\0")[0].split(b" ", 1)[0]
+                    running.add(os.path.basename(argv0).decode(errors="replace"))
             except OSError:
                 pass
     services = []
@@ -103,7 +110,19 @@ def service_status(run):
             m = re.search(r"^qtcar-service: \S+ -> (\S+)", text, re.M)
             binary = m.group(1) if m else {"valhalla": "valhalla_server", "audioweaver": "AWE_command_line_tesla",
                                            "audiod": "audiod", "dbus": "dbus-daemon",
-                                           "a2dpbridge": "alsaloop"}.get(name, name)
+                                           "connman": "connmand",
+                                           "a2dpbridge": "alsaloop",
+                                           "media-webapp-server": "media-webapp-server",
+                                           "dbus-session-chromium": "dbus-daemon",
+                                           "dbus-session-chromium-app": "dbus-daemon",
+                                           "dbus-session-chromium-fullscreen": "dbus-daemon",
+                                           "chromium-adapter": "ChromiumAdapter",
+                                           "chromium-input": "input-to-virtual",
+                                           "chromium-app-input": "input-to-virtual",
+                                           "chromium-fullscreen-input": "input-to-virtual",
+                                           "chromium": "tesla-chromium-main",
+                                           "chromium-app": "tesla-chromium-main",
+                                           "chromium-fullscreen": "tesla-chromium-main"}.get(name, name)
             restarts = sum(1 for l in text.splitlines() if EXIT_RE.match(l))
         services.append({"name": name, "bin": binary, "up": binary in running, "restarts": restarts,
                          "log": name + ".log"})
@@ -242,13 +261,23 @@ class Summary:
             m = re.search(r"kernel: (\S+)\[\d+\]: segfault at \S+ .*? in (\S+?)\[([0-9a-f]+)", line)
             if m:
                 key = f"{m.group(1)} in {m.group(2)}[{m.group(3)}]"
+                # during the teardown (services killed in some order): note it, but it isn't the run's
+                t = re.match(r"(\w+ +\d+ [\d:]+)", line)
+                try:
+                    when = datetime.datetime.strptime(f"{datetime.date.fromtimestamp(self.stop).year} {t.group(1)}",
+                                                      "%Y %b %d %H:%M:%S").timestamp()
+                    if when >= self.stop:
+                        key += " (while stopping)"
+                except (AttributeError, ValueError):
+                    pass
             elif re.search(r"traps: |general protection|Out of memory|oom-kill", line):
                 key = line.split("kernel: ", 1)[-1][:100]
             else:
                 continue
             crashes[key] = crashes.get(key, 0) + 1
         if crashes:
-            self.add("Kernel", "segfault: " + "; ".join(f"{k}{f' ({n}x)' if n > 1 else ''}" for k, n in crashes.items()), "bad")
+            text = "segfault: " + "; ".join(f"{k}{f' ({n}x)' if n > 1 else ''}" for k, n in crashes.items())
+            self.add("Kernel", text, "warn" if all(k.endswith("(while stopping)") for k in crashes) else "bad")
         else:
             self.add("Kernel", "no segfaults", "ok")
 
@@ -257,11 +286,14 @@ class Summary:
         if not os.path.exists(audiod) and not os.path.exists(os.path.join(self.run, "audio.log")):
             return
         notes, level = [], "ok"
-        pump = len(re.findall(r"Pump error", read(audiod)))
+        # "Pump error: CYCLE device": the first cycles (4 ms each) open the idle inputs, one error
+        # each is normal (the S/X: five chime inputs at cycle ~130)
+        pump = sum(1 for c in re.findall(r"Pump error: (\d+)", read(audiod)) if int(c) > 1000)
+        pump += len(re.findall(r"Pump error(?!: \d)", read(audiod)))
         if pump > 3:    # one or two at startup are normal
             notes.append(f"{pump} pump error(s) in audiod.log")
             level = "warn" if pump < 30 else "bad"
-        host = read(os.path.join(self.run, "audio.log"))
+        host = read(os.path.join(self.run, "audio.log")) + read(os.path.join(self.run, "audio-browser.log"))
         clipped = sum(int(n) for n in re.findall(r"clipped (\d+) samples", host))
         if clipped:
             notes.append(f"sox clipped {clipped} samples")

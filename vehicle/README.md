@@ -2,7 +2,9 @@
 
 Fake vehicle inputs for QtCar in the chroot, so the UI sees a car instead of "no car attached".
 Everything here runs on the host: the chroot shares the host's network, and the firmware services
-talk over UDP on loopback.
+talk over UDP on loopback. Both firmwares: the Model 3's goes through Tesla's own simulator
+(below), the Model S/X's has none and `tesla-can.py` plays all its ECUs (its own database
+`work/can-db-models.json`, presets and panel controls: "The Model S/X 2026: what drives what").
 
 | File | What |
 |---|---|
@@ -17,8 +19,11 @@ talk over UDP on loopback.
 ./tesla start --vehicle --gps "--pos 37.4419,-122.1430 --to 37.4275,-122.1697 --speedup 2"   # drive
 ```
 
-`--vehicle` (`VEHICLE=1` in tesla.conf) starts `QtCarSimService` (Tesla's vehicle simulator, `qtcar-service qtcar-sim`),
-`qtcar-vehicle` and `tesla-can.py --preset parked`. **http://localhost:8099/** is a web page to
+`--vehicle` (`VEHICLE=1` in tesla.conf) starts `qtcar-vehicle` and
+`tesla-can.py --preset parked`; for the 2019 Model 3 it also starts `QtCarSimService` (Tesla's
+vehicle simulator, `qtcar-service qtcar-sim`). The 2026 Model S/X has no simulator, so
+`tesla-can.py` supplies the gateway frames itself. Its parked preset includes a US country code
+and map region, which online vector tile requests need. **http://localhost:8099/** is a web page to
 open doors, plug in the charger, switch lights, change temperatures and tire pressures, apply
 presets and set any signal while it runs, next to the values QtCar actually sees; it also shows
 the run's services (up/down, restarts) and links their logs (`tesla-can.py --log-dir`). It listens
@@ -142,6 +147,85 @@ below 2.2 bar (`TPMS_WARN_BAR`): `--preset tire-low` or a panel slider -> yellow
 "Tire pressure low", the wheel in orange on the tire card (drive rail on). `parked` puts the
 tires at 2.9 bar (the simulator's default is 1.0) and the TPMS learning status at PASSED.
 
+### The Model S/X 2026: what drives what (sandbox, 2026-10-22)
+
+No simulator: `tesla-can.py --all-zero` sends every ECU message of the gateway's ETH stream
+(4-byte ids, port 1234) and the presets set the rest (`PRESETS_SX`). Found by setting one signal
+and comparing all ~1400 `VAPI_*`/`LIGHT_*`/`HVAC_*`/`TPMS_*`/`DOOR_*` values before and after
+(one request at a time: see the note on the value server below). The panel's S/X controls
+(`CONTROLS_SX`) use these:
+
+| Set | QtCar data value | Notes |
+|---|---|---|
+| `SC_{driver,pass}{Front,Rear}DoorOpenStatus`, `SC_frontTrunkStatus`, `SC_rearTrunkStatus` open/closed | `VAPI_doorState` | the car picture opens the door, frunk/trunk say "Opened" |
+| `BC_ftSecondaryLatchStatus` | `VAPI_frontTrunkLatch` | |
+| `SC_vehicleLockStatus` RKE_LOCKED/RKE_UNLOCKED | `VAPI_isLocked` | |
+| `CP_chargeDoorOpen`, `CP_latchState`, `GTW_chargeState` | `VAPI_chargePortDoorSensor`, `VAPI_chargePortLatch`, `VAPI_isCharging` | |
+| `DI_gear` | `VAPI_shiftState` | |
+| `DI_analogSpeed` (mph) | `VAPI_vehicleSpeed`, `VAPI_displaySpeed` | `DI_vehicleSpeed` only drives `VAPI_signedVehicleSpeed` (offset −25 mph) |
+| `BC_headLight{L,R}Status`, `BC_parkingLight*`, `BC_tailLight*`, `BC_fogLight{FL,FR,RL,RR}Status` | `LIGHT_headlight*`, `LIGHT_parking*`, `LIGHT_tail*`, `LIGHT_frontFog*`, `LIGHT_rearFog*` | the Pektron body controller (`VAPI_bodyControls` Pektron); nothing in this firmware sets `VAPI_headLights` |
+| `BC_flashMainSwitch=Main_beam_toggle` | `LIGHT_highBeam*` | `BC_highBeam*Status` alone does nothing |
+| `BC_indicator{L,R}Status=On` | `VAPI_turnSignalActive` Left/Right/Both | |
+| `SC_hazardSwitchStatus=Hazard_request` | `VAPI_hazards` | |
+| `EPB_brakeApplied=APPLIED` + `EPB_state=PARK` + `EPB_syncState=READY` | `VAPI_parkBrakeApplied` | one of them alone isn't enough |
+| `SDM_buckleDriverStatus` | `VAPI_driverSeatbelt` | `RCM_*` does nothing |
+| `GTW_ambientTemperature` | `HVAC_outsideTemp` | filtered: the first value as it is, lower ones within seconds, higher ones only while `VAPI_vehicleSpeed` > 0 (`GatewayTemperaturesMessage`) |
+| `TPMS_pressure{FL,FR,RL,RR}` (bar) | `TPMS_pressure*Conti` | |
+| `THC_hvacSystemNominal=1` | `HVAC_systemNominal` | climate keeper, dog and camp mode available |
+| `THC_MCUOffInd_Flag`, `THC_MCUAconInd_Flag`, `THC_MCUBlowerSegDis_Flag`, `THC_MCULeft/RightTempSetpoint_DegC`, `THC_MCUModeDis_Flag` (`THC_MCUHMIResponse`) | `HVAC_powerState`, `HVAC_aconStatus`, `HVAC_fanStatus`, `HVAC_driver/passengerTempStatus`, `HVAC_ventStatus` | the climate panel shows these |
+| `THC_MCUIntakePercent` (recirculated air, %) | `HVAC_intakeStatus` | Recirc above 50; `THC_MCUIntakeInd_Flag` drives nothing |
+| `GTW_seatHeatersInstalled`, `GTW_rearSeatHeatersInstalled`, `GTW_steeringHeat`, `GTW_wiperHeatInstalled` | `VAPI_hasSeatHeaters`, `VAPI_rearSeatHeaters`, `VAPI_steeringWheelHeater`, `VAPI_hasWiperHeater` | the climate panel gets seats, steering wheel and wiper heater at QtCar's next start |
+| `GTW_chargeState` (DISCONNECTED, CHARGING, COMPLETE, STOPPED) | `VAPI_isCharging`, the cluster's charge panel | plus `CP_*` for the plug on the car picture |
+| `CHG_lineCurrent`, `CHG_inputVoltage`, `CHG_inputPowerUI` (kW) | `VAPI_chargerCurrent`, `VAPI_chargerVoltage`, `VAPI_chargerPower` | the cluster's kW |
+| `CHG_pilotCurrent`, `BMS_chgLineCurrentAvail` | `VAPI_chgPilotCurrent`/`VAPI_maxPilotCurrent`, `VAPI_maxLineCurrent` | the latter is the UI's charge current range (`GUI_chargeCurrentRequestMax`) |
+| `BMS_packCurrent` (A, + = into the pack), `BMS_packVoltage` | `VAPI_batteryCurrent`, `VAPI_batteryVoltage` | QtCarVehicle averages them into `VAPI_chargeAveragePower` |
+| `BMS_chgTimeToFull` (h) | `VAPI_chargeTimeToFull` | the cluster's "Time Remaining" |
+| `BMS_fastChargerPresent` | `VAPI_fastChargerPresent` | |
+| `STW_leftButtons`, `STW_rightButtons` (bits: 0 bottom, 1 middle, 2 top) | `STW_leftBottom`/`Middle`/`Top`, `STW_right*` | the scroll wheels' tilt and press: the MAME keys; the panel's Arcade tab (`VIRTUAL_SX`) |
+| `STW_leftWheel`, `STW_rightWheel` (ticks, 255 = −1) | `STW_leftScroll`, `STW_rightScroll` | |
+
+Charging (`ChargeModelSX`): while `GTW_chargeState` is CHARGING the charger draws the UI's charge
+current (`MCU_requestLineChargeCurrent`) up to the station's pilot (`CHG_pilotCurrent`, panel
+"Station") at `CHG_inputVoltage`; the battery (`X_batteryLevel`) fills with that power (92 % into
+the pack's usable 81 kWh), the energies follow, and at the UI's charge limit
+(`MCU_chargeTerminationPct`, in % of 0.1 steps; 4.8 = not set yet) the state becomes COMPLETE.
+`MCU_requestChargeEnable` (Stop/Start Charging) switches CHARGING and STOPPED. The cluster shows
+time remaining, energy added (`GUI_chargeSessionIdealEnergyAdded`, QtCar's own from the energies),
+kW and the rate in mi/hr: QtCar's `GUI_chargeAveragePower` / `VAPI_ratedWattHourPerMile`. QtCar
+doesn't take `VAPI_chargeAveragePower` over from QtCarVehicle here (the rate stayed 0), so
+`./tesla start --vehicle` copies it over D-Bus (`host-connectivity.py --copy`). The center
+display's Charging tab has the limit, the current and Stop/Start, no session figures.
+
+QtCar's requests (`--respond`, on :20100): `MCU_lockRequest`, `MCU_liftgateSwitch` (PRESSED
+toggles the trunk, CLOSE closes it), `MCU_frontHoodCommand=GOTO_OPEN` (frunk), the charge port
+door requests, `MCU_lightSwitchToGtw` (Off/Parking/On/Auto -> the lamps), `MCU_frontFogSwitch`,
+`MCU_rearFogSwitch`, `MCU_parkBrakeRequest` (toggles the parking brake). The frunk can only be
+closed from the panel, as on the car.
+
+The display state machine (`DisplayStateManager`, libQtCarUIFramework; on with `--vehicle`):
+startup Accessory -> On when the drive rail is on (`GTW_vehiclePowerState` DRIVE ->
+`VAPI_driveRailOn`). Drive rail off: On -> Dog (state 8, `CD_displayState`; DogModeView) when
+`GUI_keepClimateOn` is Dog and the driver isn't present (`SEC_driverPresent`), else Accessory.
+Door opened: Dog -> Accessory; drive rail on: -> On, dog mode off. The order matters: SCStatus
+goes out once a second, the gateway status every 500 ms, so `X_driver` (the panel's Driver
+switch) sends "not present" first and the rail 2 s later.
+
+Climate: the UI sends `MCU_THCHumanInterfaceRequest` (0x32) and the thermal controller echoes it in
+`THC_MCUHMIResponse` (`_sx_thc`: Auto = fan 3, panel and floor, A/C on; manual values as asked;
+recirculation = `MCU_IntakeBtnState_Flag=FRESH_OFF_RECIRC`). QtCar copies the answer back into its
+request, so while the climate is off the manual fan request is 0: back on, the last speed again.
+Defrost (`MCU_DefogBtnState_Flag` DEFOG/MAX_DEFOG) is QtCar's own setup (Auto, defrost vents,
+28 °C = HI). Seat heaters (`MCU_setSeatHeater`), steering wheel heat (`MCU_SCCM_IC_A1` SwHeat) and
+rear defrost (`MCU_rearDefrostRequest`) show the UI's request without an answer; so does the wiper
+heater (`GUI_wiperHeatRequest`; `MCU_frontWiperDefrostReq` stayed OFF on the wire, it would be
+answered with `BCFRONT_wiperDefrostStatus`).
+
+**The value server (port 4030):** the framework keeps a thread and a socket per connection for
+minutes after its last request. One connection per value (the panel's polling did that) took the
+S/X QtCarVehicle past 1024 descriptors within minutes, and it aborted (`*** bit out of range 0 -
+FD_SETSIZE on fd_set ***`). The server answers several HTTP/1.1 requests on one connection (both
+firmwares), so the panel keeps one open (`DvConnection`).
+
 ### Paint, wheels, performance
 
 Part of the car config the sim sends (`GTW_carConfig`): `SIM_exteriorColor` (RedMulticoat,
@@ -152,6 +236,18 @@ Stiletto19, Stiletto20, Stiletto20Staggered, Gemini19Square, Gemini19Staggered),
 sets both: `./tesla start --color DeepBlue --wheels Gemini19Square` (`VEHICLE_COLOR`, ... in tesla.conf).
 The sim stores its values, so they stay. The firmware only has Model 3 assets (chassis S/X
 isn't something this UI draws).
+
+The Model S/X 2026: `GTW_exteriorColorCode` (carConfig2), `GTW_wheelType` (carConfig3),
+`GTW_performanceAddOn` (carConfig4) become `VAPI_exteriorColor`, `VAPI_wheelType`,
+`VAPI_performanceAddOn` with the raw value. QtCar (`QtCarSettings.db`) and the cluster
+(`/home/qtcluster/.Tesla/data/QtCarClusterSettings.db`) each keep a copy and paint the car from it
+at startup; when the live car config differs, `CarConfigChangeProcessRestarter` restarts
+QtCarCluster (and QtCar for wheels/performance) about 10 s later. So `./tesla start` writes all
+three: the option names are libQtCarVAPI's (`look_choices` in tools/common.sh), without the Model X
+wheels (Helix20, AeroTurbine20, Turbine22, AeroTurbine20Dark, Turbine22Dark, Slipstream20*: "Failed
+to load: car/hero/wheel_front_20.png" ...). Without options it writes the all-zero values (Default
+= red, Base19, Standard). The firmware also has Model X pictures (`assets/night/car/modelx`,
+`GTW_chassisType`), untried. `GTW_roofColor` (None = body colour, Black, Glass) is not an option yet.
 
 ## tesla-can.py
 

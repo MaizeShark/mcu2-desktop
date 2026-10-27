@@ -1,0 +1,88 @@
+# The stick's Debian 13 packages (./tesla build-stick), without recommends. `#` starts a comment.
+
+# boot: kernel, live system (squashfs + overlay, persistence partition), first-boot growing
+linux-image-amd64
+live-boot
+live-boot-initramfs-tools
+initramfs-tools
+systemd-sysv
+udev
+dbus
+dbus-user-session
+kmod
+dmsetup
+cloud-guest-utils
+gdisk
+fdisk
+e2fsprogs
+
+# console, keyboard, time zone, network (Wi-Fi setup: sudo nmtui)
+sudo
+console-setup
+keyboard-configuration
+kbd
+tzdata
+procps
+psmisc
+less
+nano
+iproute2
+iputils-ping
+iw
+network-manager
+wpasupplicant
+ca-certificates
+bsdextrautils
+acl
+zstd
+usbutils
+pciutils
+
+# X server (no desktop, no window manager: as on the car), keys (xbindkeys)
+xserver-xorg-core
+# Xorg as root (Xorg.wrap, /etc/X11/Xwrapper.config): QtCar renders in software on GPUs Mesa
+# doesn't drive and hands its frames over as MIT-SHM segments of its own user; only a root X
+# server may attach them (else a black screen, "Failed to attach to x11 shm")
+xserver-xorg-legacy
+xserver-xorg-input-libinput
+xserver-xorg-video-ati
+xserver-xorg-video-amdgpu
+xserver-xorg-video-fbdev
+xinit
+x11-xserver-utils
+x11-utils
+xauth
+xbindkeys
+libgl1-mesa-dri
+libegl-mesa0
+libgbm1
+
+# what ./tesla uses on the host: sound, camera (v4l2loopback built by dkms), Bluetooth
+python3
+curl
+alsa-utils
+sox
+pipewire
+pipewire-bin
+wireplumber
+ffmpeg
+v4l-utils
+dkms
+linux-headers-amd64
+v4l2loopback-dkms
+bluez
+rfkill
+
+# firmware for common laptops/PCs: Intel/AMD graphics, Wi-Fi/Bluetooth, sound, microcode
+firmware-misc-nonfree
+firmware-intel-graphics
+firmware-amd-graphics
+firmware-iwlwifi
+firmware-realtek
+firmware-atheros
+firmware-brcm80211
+firmware-mediatek
+firmware-intel-sound
+firmware-sof-signed
+intel-microcode
+amd64-microcode

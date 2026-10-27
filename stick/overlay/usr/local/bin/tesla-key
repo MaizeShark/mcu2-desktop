@@ -1,0 +1,9 @@
+#!/bin/sh
+# Keys while QtCar runs (/etc/tesla-stick/xbindkeysrc): console, restart, poweroff
+flag=${XDG_RUNTIME_DIR:-/tmp}/tesla-console
+cd ~/mcu2-desktop || exit 1
+case "$1" in
+    console) echo "Ctrl+Alt+Esc" >"$flag"; ./tesla stop ;;
+    restart) ./tesla stop ;;
+    poweroff) echo "power off" >"$flag"; ./tesla stop; sudo systemctl poweroff ;;
+esac >>logs/session.log 2>&1

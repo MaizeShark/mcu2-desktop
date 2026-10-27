@@ -26,7 +26,7 @@ tool() {
     if command -v "$2" >/dev/null 2>&1; then
         chk ok "$2 ($4)"
     else
-        chk "$1" "$2 missing ($4)" "install it: sudo apt install $3"
+        chk "$1" "$2 missing ($4)" "install it: $(pkg_install "$3")"
     fi
 }
 
@@ -64,7 +64,7 @@ check_host() {
         for v in ${VIEWER:-krdc remote-viewer remmina vncviewer}; do command -v "$v" >/dev/null && found=$v && break; done
         if [ -n "$found" ]; then chk ok "VNC viewer: $found"
         else chk warn "no VNC viewer (${VIEWER:-krdc, remote-viewer, remmina, vncviewer})" \
-            "install one (sudo apt install krdc), or connect to vnc://localhost:$VNC_PORT yourself"
+            "install one ($(pkg_install krdc)), or connect to vnc://localhost:$VNC_PORT yourself"
         fi
     fi
     if [ -x "$TOUCH_BIN" ]; then
@@ -89,6 +89,11 @@ check_config() {
     [ -n "${CONF_UNKNOWN:-}" ] &&
         chk warn "unknown settings in $(basename "$CONF_FILE"):$CONF_UNKNOWN" "known: ${CONF_VARS[*]}"
     case "$SIZE" in [0-9]*x[0-9]*) ;; *) chk fail "SIZE=$SIZE is not WIDTHxHEIGHT" ;; esac
+    case "$CURSOR" in auto|on|off) ;; *) chk fail "CURSOR=$CURSOR is not auto, on or off" ;; esac
+    case "$ROTATE" in normal|left|right|inverted) ;; *) chk fail "ROTATE=$ROTATE is not normal, left, right or inverted" ;; esac
+    if [ "$SCREEN" != native ] && [ "$ROTATE" != normal ]; then
+        chk fail "ROTATE=$ROTATE needs --native"
+    fi
     return 0
 }
 
@@ -101,19 +106,21 @@ check_image() {
         return
     fi
     if src=$(image_mounted); then
-        if [ "$(realpath "$src" 2>/dev/null)" = "$IMAGE" ] || losetup -j "$IMAGE" 2>/dev/null | grep -q "^$src:"; then
+        if [ "$(realpath "$src" 2>/dev/null)" = "$IMAGE" ] || loop_devs_of "$IMAGE" | grep -qx "$src"; then
             chk ok "image mounted at $CHROOT"
+        elif [ "$src" = "/dev/mapper/$RAM_DM" ]; then
+            chk ok "image mounted at $CHROOT, its writes in RAM (IMAGE_RAM)"
         else
             chk warn "$CHROOT has $src mounted, not $IMAGE" "that one is used; to switch: ./tesla stop && sudo umount $CHROOT"
         fi
     elif [ -f "$IMAGE" ]; then
         chk ok "image $IMAGE ($(( $(stat -c %s "$IMAGE") / 1024 / 1024 / 1024 )) GB, mounted at start)"
     else
-        chk fail "no image at $IMAGE" "build one: ./tesla build-image --fresh (needs the firmware dump in mcu2-original/)"
+        chk fail "no image at $IMAGE" "build one: ./tesla build-image --fresh (needs the firmware dump in $DUMP)"
         return
     fi
     stamp=$(kit_stamp)
-    kit=$(python3 "$KIT" --kit-version 2>/dev/null)
+    kit=$(kit_version_for "$stamp")
     have=$(sed -n 's/^kit=//p' <<<"$stamp")
     date=$(sed -n 's/^date=//p' <<<"$stamp" | cut -c1-16 | tr T ' ')
     if [ -z "$stamp" ]; then
@@ -158,38 +165,40 @@ check_features() {
     local v n
     # VEHICLE
     v=$(on "$VEHICLE")
-    if [ -s vehicle/work/can-db.json ]; then
-        chk ok "CAN signal database (vehicle data)"
+    if [ -s "$(can_db)" ]; then
+        chk ok "CAN signal database (vehicle data): $(can_db)"
     elif python3 -c 'import unicorn, elftools' 2>/dev/null; then
         chk ok "CAN signal database: extracted from the firmware at the first VEHICLE=1 start"
     else
         chk "$( [ "$v" = 1 ] && echo warn || echo off)" "CAN signal database missing, can't build it (vehicle data)" \
             "pip install --user unicorn pyelftools (it's extracted from the firmware once)"
     fi
-    check_choice exteriorColor "$VEHICLE_COLOR" RedMulticoat SolidBlack SilverMetallic MidnightSilver DeepBlue PearlWhite
-    check_choice wheelType "$VEHICLE_WHEELS" Pinwheel18 Stiletto19 Stiletto20 Stiletto20Staggered Gemini19Square Gemini19Staggered
-    check_choice performancePackage "$VEHICLE_PERFORMANCE" Base Performance Ludicrous BasePlus
+    check_choice color "$VEHICLE_COLOR" $(look_names color)
+    check_choice wheels "$VEHICLE_WHEELS" $(look_names wheels)
+    check_choice performance "$VEHICLE_PERFORMANCE" $(look_names performance)
     if [ "$v" = 0 ] && [ -n "$VEHICLE_COLOR$VEHICLE_WHEELS$VEHICLE_PERFORMANCE" ]; then
         chk warn "VEHICLE_COLOR/WHEELS/PERFORMANCE only apply with vehicle data" "--vehicle (VEHICLE=1)"
     fi
 
     # AUDIO
     v=$(on "$AUDIO")
-    tool "$(lvl "$v")" arecord alsa-utils "audio: reads the car's amplifier"
+    tool "$(lvl "$v")" arecord alsa-utils "audio: captures the firmware's loopback"
     tool "$(lvl "$v")" sox sox "audio: 8 channels -> stereo"
     if command -v pw-play >/dev/null; then chk ok "pw-play (audio: plays on this PC, PipeWire)"
     elif command -v pacat >/dev/null; then chk ok "pacat (audio: plays on this PC, PulseAudio)"
     else tool "$(lvl "$v")" aplay alsa-utils "audio: plays on this PC (ALSA)"; fi
-    if grep -q '^ *[0-9]* \[model3 *\]' /proc/asound/cards 2>/dev/null; then
-        chk ok "sound card model3 (snd-aloop) loaded"
+    # both firmwares: AudioWeaver's amplifier output on "model3" (the S/X's audiod too)
+    local card=model3
+    if grep -q "^ *[0-9]* \[$card *\]" /proc/asound/cards 2>/dev/null; then
+        chk ok "sound card $card (snd-aloop) loaded"
     elif lsmod 2>/dev/null | grep -q '^snd_aloop'; then
-        chk "$( [ "$v" = 1 ] && echo fail || echo off)" "snd-aloop is loaded, but not as card model3 (audio)" \
-            "sudo modprobe -r snd-aloop (the next start loads it with id=model3)"
+        chk "$( [ "$v" = 1 ] && echo fail || echo off)" "snd-aloop is loaded, but not as card $card (audio)" \
+            "sudo modprobe -r snd-aloop (the next start loads the required card)"
     elif PATH=$PATH:/sbin:/usr/sbin modinfo snd-aloop >/dev/null 2>&1 ||
         ls /lib/modules/"$(uname -r)"/kernel/sound/drivers/snd-aloop.ko* >/dev/null 2>&1; then
-        chk ok "snd-aloop available (loaded as card model3 at start)"
+        chk ok "snd-aloop available (loaded as card $card at start)"
     else
-        chk "$(lvl "$v")" "kernel module snd-aloop not available (audio)" "sudo apt install linux-modules-extra-\$(uname -r)"
+        chk "$(lvl "$v")" "kernel module snd-aloop not available (audio)" "$(pkg_install "linux-modules-extra-$(uname -r)")"
     fi
 
     # the loopback cards must not be taken by PulseAudio / PipeWire
@@ -204,6 +213,16 @@ check_features() {
         chk ok "Bluetooth adapter $BT_ADAPTER ($(cat /sys/class/bluetooth/$BT_ADAPTER/device/uevent 2>/dev/null | sed -n 's/^DRIVER=//p'))"
     else
         chk "$( [ "$v" = 1 ] && echo fail || echo off)" "no Bluetooth adapter $BT_ADAPTER (bluetooth)" "BT_ADAPTER=hciN in tesla.conf"
+    fi
+
+    # WIFI
+    v=$(on "$WIFI")
+    local wdev=$WIFI_ADAPTER
+    [ "$wdev" = auto ] && wdev=$(find_wifi)
+    if [ -n "$wdev" ] && [ -d "/sys/class/net/$wdev/wireless" ]; then
+        chk "$( [ "$v" = 1 ] && echo ok || echo off)" "Wi-Fi adapter $wdev ($(sed -n 's/^DRIVER=//p' "/sys/class/net/$wdev/device/uevent" 2>/dev/null))$( [ "$v" = 1 ] || echo ' (wifi off: --wifi)')"
+    else
+        chk "$( [ "$v" = 1 ] && echo fail || echo off)" "no Wi-Fi adapter${wdev:+ $wdev} (wifi)" "WIFI_ADAPTER=NAME in tesla.conf"
     fi
 
     # MUSIC

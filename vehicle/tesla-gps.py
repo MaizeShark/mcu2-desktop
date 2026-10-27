@@ -95,15 +95,20 @@ class RawGpsKeeper:
     GpsManager's estimator sets LOC_estimatedGPSValid=true whenever it starts, and QtCar then shows
     the estimate (which doesn't follow GPS without vehicle speed) even with GUI_smoothGPSUpdates=false.
     It only resets the flag when LOC_enableSmoothGPSUpdates changes, which doesn't happen when that
-    setting is already stored as false. QtCar also stores the flag in its settings DB."""
+    setting is already stored as false. QtCar also stores the flag in its settings DB.
+    The 2026 S/X QtCar has no HTTP data values (its :4220 is the Spotify client's, which logs
+    "Invalid method name"): only GpsManager there."""
     PORTS = (4160, 4220)    # GpsManager, QtCar (which keeps its own copy of the flag)
+
+    def __init__(self, ports=PORTS):
+        self.ports = ports
 
     def start(self):
         threading.Thread(target=self.run, daemon=True).start()
 
     def run(self):
         while True:
-            for port in self.PORTS:
+            for port in self.ports:
                 if dv_request(port, "_data_get_value_request_?name=LOC_estimatedGPSValid", 5) == "true":
                     dv_request(port, "_data_set_value_request_?name=LOC_estimatedGPSValid&value=false", 5)
             time.sleep(2)
@@ -114,7 +119,7 @@ class CanLink:
     gear, speed and odometer follow the fake GPS. Set twice: as QtCarSimService values (with the
     drive rail on the sim simulates the drive inverter itself) and as DI_* CAN signals, which
     tesla-can.py sends only when no sim does."""
-    CONTROL = ("127.0.0.1", 20100)
+    CONTROL = ("127.0.0.1", 20180)      # tesla-can.py's control port
 
     def __init__(self, odometer_km=None, hysteresis=False):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -311,6 +316,18 @@ def parse_point(text):
     return lat, lon
 
 
+def ui_platform(rootfs):
+    """UI_PLATFORM of the firmware (etc/RunQtCar.env): SX for the 2026 Model S/X, else the Model 3's."""
+    try:
+        for line in open(os.path.join(rootfs, "etc", "RunQtCar.env")):
+            if line.strip().startswith("UI_PLATFORM="):
+                v = line.split("=", 1)[1].strip().strip('"')
+                return v[v.find(":-") + 2:-1] if v.startswith("${") else v   # ${UI_PLATFORM:-SX}
+    except (OSError, TypeError):
+        pass
+    return None
+
+
 def default_rootfs():
     for p in (os.path.join(REPO, "chroot"), os.path.join(REPO, "sandbox", "rootfs")):
         if os.path.isdir(os.path.join(p, "opt", "navigon", "tm")) and os.listdir(os.path.join(p, "opt", "navigon", "tm")):
@@ -439,7 +456,8 @@ def main():
     host, port = args.target.rsplit(":", 1)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     if not args.estimate:
-        RawGpsKeeper().start()
+        sx = ui_platform(args.rootfs or os.path.join(REPO, "chroot")) == "SX"
+        RawGpsKeeper((4160,) if sx else RawGpsKeeper.PORTS).start()
     can = CanLink(args.odometer, hysteresis=bool(args.uart)) if args.can else None
     if args.uart:
         try:

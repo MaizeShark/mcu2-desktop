@@ -1,0 +1,140 @@
+# Download sources for this profile's files in payload/2026.8.3-models/.
+# Debian 13 (trixie), found 2026-09-27: Mesa 25.0.7 (the firmware's own version, whose build here
+# has no software renderer) with llvmpipe, glvnd, LLVM 19, and the libraries they need that the
+# firmware lacks. Built against glibc <= 2.38, the firmware has 2.41.
+# Superseded versions leave deb.debian.org's pool; they stay at
+# https://snapshot.debian.org/archive/debian/<date>/pool/... (same path).
+# Format: see ../2019.20.4.2-model3/sources.toml.
+
+["opt/mesa/lib/libgallium-25.0.7-2+deb13u1.so"]
+url    = "https://deb.debian.org/debian/pool/main/m/mesa/mesa-libgallium_25.0.7-2+deb13u1_amd64.deb"
+sha256 = "3e610f29321cdcc61337c86e6b4031ff60f0c9915fe19e6a862ac06480620ff4"
+member = "usr/lib/x86_64-linux-gnu/libgallium-25.0.7-2+deb13u1.so"
+
+["opt/mesa/lib/libEGL_mesa.so.0"]
+url    = "https://deb.debian.org/debian/pool/main/m/mesa/libegl-mesa0_25.0.7-2+deb13u1_amd64.deb"
+sha256 = "0ddebd7e91b048aac812611d6bd008343386cb140b51e5e66df74c6b6263be65"
+member = "usr/lib/x86_64-linux-gnu/libEGL_mesa.so.0"
+
+["opt/mesa/lib/libGLX_mesa.so.0"]
+url    = "https://deb.debian.org/debian/pool/main/m/mesa/libglx-mesa0_25.0.7-2+deb13u1_amd64.deb"
+sha256 = "2e6ab57de9931e890621d3ade04213b06e7142a4ae8a72a1756c44d0271aaeb7"
+member = "usr/lib/x86_64-linux-gnu/libGLX_mesa.so.0"
+
+["opt/mesa/lib/libgbm.so.1"]
+url    = "https://deb.debian.org/debian/pool/main/m/mesa/libgbm1_25.0.7-2+deb13u1_amd64.deb"
+sha256 = "31fb6d76b9ceaf13848fa617df53f85f62626b4fe7464a93811c720af6d5f2dd"
+member = "usr/lib/x86_64-linux-gnu/libgbm.so.1"
+
+["opt/mesa/lib/gbm/dri_gbm.so"]
+url    = "https://deb.debian.org/debian/pool/main/m/mesa/libgbm1_25.0.7-2+deb13u1_amd64.deb"
+sha256 = "31fb6d76b9ceaf13848fa617df53f85f62626b4fe7464a93811c720af6d5f2dd"
+member = "usr/lib/x86_64-linux-gnu/gbm/dri_gbm.so"
+
+["opt/mesa/lib/dri/libdril_dri.so"]
+url    = "https://deb.debian.org/debian/pool/main/m/mesa/libgl1-mesa-dri_25.0.7-2+deb13u1_amd64.deb"
+sha256 = "722fad9944bdfd29eb6421576331a2697f83bc4b3551d693edb7aefdde6bb198"
+member = "usr/lib/x86_64-linux-gnu/dri/libdril_dri.so"
+
+["opt/mesa/lib/libEGL.so.1"]
+url    = "https://deb.debian.org/debian/pool/main/libg/libglvnd/libegl1_1.7.0-1+b2_amd64.deb"
+sha256 = "62e7bc8ccd47a60e55aad17f83d8d474310d782eb8589bbce2ab714c31712406"
+member = "usr/lib/x86_64-linux-gnu/libEGL.so.1"
+
+["opt/mesa/lib/libGL.so.1"]
+url    = "https://deb.debian.org/debian/pool/main/libg/libglvnd/libgl1_1.7.0-1+b2_amd64.deb"
+sha256 = "87fa2f6e5abaed4ed385fac879c8dd735af719ee2300222d901793c66e041678"
+member = "usr/lib/x86_64-linux-gnu/libGL.so.1"
+
+["opt/mesa/lib/libGLX.so.0"]
+url    = "https://deb.debian.org/debian/pool/main/libg/libglvnd/libglx0_1.7.0-1+b2_amd64.deb"
+sha256 = "2721fdca0fe3bd963cb39482eabc253af52b88f4a7f6dbb69e475549daf5af3b"
+member = "usr/lib/x86_64-linux-gnu/libGLX.so.0"
+
+["opt/mesa/lib/libGLdispatch.so.0"]
+url    = "https://deb.debian.org/debian/pool/main/libg/libglvnd/libglvnd0_1.7.0-1+b2_amd64.deb"
+sha256 = "887f74008166549ce9e100c906aa937e95d6e5ce1c8d86efe8c95fd953359b9c"
+member = "usr/lib/x86_64-linux-gnu/libGLdispatch.so.0"
+
+["opt/mesa/lib/libGLESv2.so.2"]
+url    = "https://deb.debian.org/debian/pool/main/libg/libglvnd/libgles2_1.7.0-1+b2_amd64.deb"
+sha256 = "e12c18aa77939d122ee1dea520ba0440b97dc19200b7396e03dff03a3ece74c1"
+member = "usr/lib/x86_64-linux-gnu/libGLESv2.so.2"
+
+["opt/mesa/lib/libLLVM.so.19.1"]
+url    = "https://deb.debian.org/debian/pool/main/l/llvm-toolchain-19/libllvm19_19.1.7-3+b1_amd64.deb"
+sha256 = "db0d614d61345ca710fb73e75105f1ec6e38898fa7b3aa99fa7eb7d8b0a11d57"
+member = "usr/lib/x86_64-linux-gnu/libLLVM.so.19.1"
+
+["opt/mesa/lib/libdrm.so.2"]
+url    = "https://deb.debian.org/debian/pool/main/libd/libdrm/libdrm2_2.4.124-2_amd64.deb"
+sha256 = "fe2276901c7cd7b8079de63072d37fe1cbeb4eb001a3bc1f1d662ad89aa0890e"
+member = "usr/lib/x86_64-linux-gnu/libdrm.so.2"
+
+["opt/mesa/lib/libdrm_intel.so.1"]
+url    = "https://deb.debian.org/debian/pool/main/libd/libdrm/libdrm-intel1_2.4.124-2_amd64.deb"
+sha256 = "188ab1fd74c838b3c8055d62107351e16a4bb7a25d39c30bbb9aac30ddd37238"
+member = "usr/lib/x86_64-linux-gnu/libdrm_intel.so.1"
+
+["opt/mesa/lib/libdrm_amdgpu.so.1"]
+url    = "https://deb.debian.org/debian/pool/main/libd/libdrm/libdrm-amdgpu1_2.4.124-2_amd64.deb"
+sha256 = "c1d97a5e32e2bc68e833b8abeae026b6306198e87ee4396a7ffecd4779caefbf"
+member = "usr/lib/x86_64-linux-gnu/libdrm_amdgpu.so.1"
+
+["opt/mesa/lib/libbsd.so.0"]
+url    = "https://deb.debian.org/debian/pool/main/libb/libbsd/libbsd0_0.12.2-2_amd64.deb"
+sha256 = "e5a85986fa6bec3307ab1bc860736b478b331882bc45e17675a7bdf88eecb43a"
+member = "usr/lib/x86_64-linux-gnu/libbsd.so.0"
+
+["opt/mesa/lib/libedit.so.2"]
+url    = "https://deb.debian.org/debian/pool/main/libe/libedit/libedit2_3.1-20250104-1_amd64.deb"
+sha256 = "b002ea172b9c1e34a67bc497c523c67bb74c3f0a4e98113cb083990a1f1d3bfe"
+member = "usr/lib/x86_64-linux-gnu/libedit.so.2"
+
+["opt/mesa/lib/libmd.so.0"]
+url    = "https://deb.debian.org/debian/pool/main/libm/libmd/libmd0_1.1.0-2+b1_amd64.deb"
+sha256 = "7244ec3839b61fac0c1884fe08aaa040f26e8f1f35f1f5d3482eacefd30d1b44"
+member = "usr/lib/x86_64-linux-gnu/libmd.so.0"
+
+["opt/mesa/lib/libsensors.so.5"]
+url    = "https://deb.debian.org/debian/pool/main/l/lm-sensors/libsensors5_3.6.2-2_amd64.deb"
+sha256 = "f0a994a6d7cfa695dea5343d0d1ba7eed796c0ad920c7282998b95f60049c4f6"
+member = "usr/lib/x86_64-linux-gnu/libsensors.so.5"
+
+["opt/mesa/lib/libtinfo.so.6"]
+url    = "https://deb.debian.org/debian/pool/main/n/ncurses/libtinfo6_6.5+20250216-2_amd64.deb"
+sha256 = "8b9f6a7983e9418564e48a627518de4c03917b56efe68d7f3e93bd8fffa1cc10"
+member = "usr/lib/x86_64-linux-gnu/libtinfo.so.6"
+
+["opt/mesa/lib/libwayland-client.so.0"]
+url    = "https://deb.debian.org/debian/pool/main/w/wayland/libwayland-client0_1.23.1-3_amd64.deb"
+sha256 = "d1607e1db1a7c5378a2e5c6ae7b20f64dc6acf134f953d84a7f5204b74339f33"
+member = "usr/lib/x86_64-linux-gnu/libwayland-client.so.0"
+
+["opt/mesa/lib/libwayland-server.so.0"]
+url    = "https://deb.debian.org/debian/pool/main/w/wayland/libwayland-server0_1.23.1-3_amd64.deb"
+sha256 = "2967212bd582e0dffca443fdc44f4c660e7368d41f7ee3a7f6314e0c3abfe9ea"
+member = "usr/lib/x86_64-linux-gnu/libwayland-server.so.0"
+
+["opt/mesa/lib/libz3.so.4"]
+url    = "https://deb.debian.org/debian/pool/main/z/z3/libz3-4_4.13.3-1_amd64.deb"
+sha256 = "71383373523ef62d47eccf660cf6535c3febcbb3f88e54cb7a43124014b57359"
+member = "usr/lib/x86_64-linux-gnu/libz3.so.4"
+
+["opt/mesa/lib/libzstd.so.1"]
+url    = "https://deb.debian.org/debian/pool/main/libz/libzstd/libzstd1_1.5.7+dfsg-1_amd64.deb"
+sha256 = "2f6a2aeacfc925eba8b00ac9139bc4bfccf8cacb09eb93de067074b26948eef9"
+member = "usr/lib/x86_64-linux-gnu/libzstd.so.1"
+
+# probably should add like a debug flag.
+["usr/bin/gdbserver"]
+url    = "https://deb.debian.org/debian/pool/main/g/gdb/gdbserver_18.1-1_amd64.deb"
+sha256 = "8b3c394edcddcc96839164c5a50c267c7ebfd2d1236044baf231d2d8cfa0512c"
+member = "usr/bin/gdbserver"
+
+# The firmware's chrome_crashpad_handler is a no-op (main returns 0), which prevents the
+# 2026.8.3 Chromium 140 browser from starting. This is the matching Debian build's handler.
+["usr/lib/tesla-chromium/chrome_crashpad_handler"]
+url    = "https://snapshot.debian.org/archive/debian-security/20250927T000000Z/pool/updates/main/c/chromium/chromium-common_140.0.7339.207-1~deb13u1_amd64.deb"
+sha256 = "f77605e044bcfb0926c48de7350a02bf95dd66bc8a33aa6690304adcf34a54ca"
+member = "usr/lib/chromium/chrome_crashpad_handler"

@@ -12,7 +12,15 @@ USB music from a folder, the backup camera (v4l2loopback) and the fireplace/dog 
 all work in the real chroot. Session 6 replaced `start_all.sh` by the `./tesla` command
 (start/stop/status/check/logs/config/build-image, `tesla.conf`). Session 7 (2026-09-25): every CAN
 signal on the web panel, and the arcade (Beach Buggy Racing 2, MAME) playable, tested with
-`--native` on the laptop. Details: `notes/session6-*.md`, `notes/session7-*.md`.
+`--native` on the laptop. Session 8 (2026-09-26): `./tesla build-stick`, a bootable USB stick
+(Debian 13 live, persistence, boots into `--native`), tested in qemu, not yet on hardware.
+Details: `notes/session6-*.md`, `notes/session7-*.md`, `notes/session8-*.md`.
+Session 14 (2026-10-21): Model S/X parity audit and plan in `notes/model-s-parity.md` (items done
+there are marked); S QtCar runs `--emulated`, the S profile's `escalator-stub` replaces the car's
+escalator, S offline navigation, Chromium stops cleanly.
+Session 15 (2026-10-27): S charge model (cluster figures), MAME scroll wheels, USB music
+(/mnt/media/usb-*), wiper heater; the sandbox needs `dbus qtcar-dvserver qtcar-vehicle` for
+vehicle data in the S QtCar. Work list: `notes/model-s-parity.md`.
 
 Naming: the unit is the Model 3's **MCU2** (Intel Atom, Tesla's "ICE"), not the MCU3 (AMD).
 Until 2026-09-25 the project called it MCU3 (repo mcu3-desktop, `mcu3-*` folders); the session
@@ -21,12 +29,20 @@ kit stamp `/etc/mcu3-patchkit`, the kit's old asound.conf marker.
 
 ## Layout
 - `mcu2-original/`: pristine firmware dump, root-owned. Never modify it and never commit it.
+  The firmware files as delivered are in `firmware/<version>-<car>/`.
 - `mcu2.ext4`, mounted at `chroot/`: the image `./tesla start`
   runs (`IMAGE`/`CHROOT` in tesla.conf). `./tesla` refuses to mount it a second time elsewhere.
 - `mcu2-patchkit/mcu2_patch.py`: turns a rootfs into the working state. Idempotent, `--check`, `--list`,
-  `-q`. Writes a version stamp (`/etc/mcu2-patchkit`) that `./tesla check` compares.
-  `./tesla build-image` (kit + maps) wraps it; `--sandbox` updates `sandbox/rootfs` without sudo.
+  `-q`. Per firmware a profile (`profiles/2019.20.4.2-model3/`, `profiles/2026.8.3-models/`:
+  `profile.toml`, `kit.py` with the tables, `sources.toml`, `src/`), detected from the rootfs
+  (customerVersion.txt + UI_PLATFORM). Writes a version stamp (`/etc/mcu2-patchkit`, with
+  `profile=`) that `./tesla check` compares. `./tesla build-image` (kit + maps) wraps it;
+  `--sandbox` updates `SANDBOX_ROOT` (default `sandbox/rootfs`) without sudo.
   - `src/qtcar-service.sh` starts the firmware's `qtcar-*` services and `valhalla` inside the chroot.
+- The Model S firmware (session 9; on `main` since 2026-10-27): `firmware/2026.8.3-models/2026.8.3.mcu2` (the
+  partition as delivered), `mcu2s-original/` (pristine, root-owned), `sandbox/rootfs-s/` (user
+  copy), `tesla-s.conf` (`IMAGE=./mcu2s.ext4`, `DUMP=`, `SANDBOX_ROOT=`): `./tesla --config
+  tesla-s.conf ...`. Never commit or share any of it.
 - `tesla-touch/`: Rust mouse→multitouch bridge (`cargo build --release`).
 - `navigation/`: Valhalla 2.4.3 podman image, `build-tiles.sh`, `install-maps.sh`.
 - `vehicle/`: fake GPS (`tesla-gps.py`) and vehicle data (`tesla-can.py`, CAN signal DB from the
@@ -40,6 +56,9 @@ kit stamp `/etc/mcu3-patchkit`, the kit's old asound.conf marker.
 - Logs go to `logs/<time>/` (`logs/latest`, `logs/current` while running; `events.log`, `config`,
   `pids`, `state`), the first thing to read when the user reports a problem: `./tesla logs RUN`
   summarizes it (restarts, `journalctl -k` segfaults, audio, GPS; the user is in group adm).
+- `stick/` + `tools/build-stick.sh`: `./tesla build-stick` builds a bootable USB stick image in
+  rootless podman (no sudo); `stick/qemu.sh` boots it (OVMF, KVM, ssh on 2222 with `--ssh`).
+  Output in `stick/work/` (contains the firmware: never commit, never share). See stick/README.md.
 - `sandbox.sh`: QtCar + services in the sudo-free podman sandbox (see below).
 - `sandbox/rootfs`: a user-owned copy of the rootfs with the kit and maps applied, for testing
   without sudo (see below). Untracked.
@@ -49,7 +68,9 @@ kit stamp `/etc/mcu3-patchkit`, the kit's old asound.conf marker.
   added there to be tracked. Firmware, images, `logs/`, `sandbox/` and `navigation/work/` stay out.
 - Remotes: `origin` is the maintainer's own git server (frequent pushes are fine), `github` is
   the public repository https://github.com/MaizeShark/mcu2-desktop (push only when asked: major
-  updates). Both share one history.
+  updates). Since 2026-10-27 `github` gets one squashed commit per release, not origin's history:
+  `git commit-tree main^{tree} -p github/main -m "..."`, then push that commit to `github main`
+  (`--force-with-lease` only if replacing one). Origin keeps the full history.
 - Public repository: never commit firmware files, binaries (`mcu2-patchkit/payload/` is
   downloaded/built by the kit), keys or credentials found in the firmware, or private details
   (addresses, local network). Check before a push to `github`.
@@ -69,7 +90,10 @@ podman run --rm --timeout 20 --network host -e QCSVC_NOUSER=1 --rootfs $PWD/sand
   ~20 s) plus services on Xvfb :97; logs and screenshots in `sandbox/out/`. `--touch` runs
   tesla-touch on :97 without root (the user has an ACL on /dev/uinput); tap with
   `DISPLAY=:97 xdotool mousemove X Y click 1`.
-  In the sandbox QtCar reads `/root/.Tesla/...` instead of `/home/tesla/...`. `--browser` keeps
+  In the sandbox QtCar reads `/root/.Tesla/...` instead of `/home/tesla/...`.
+  `--root sandbox/rootfs-s` runs the Model S firmware: its profile gives Xvfb :97 two screens
+  (1200x1920 + the cluster 1920x720 on :97.1, QtCarCluster), the kit's Mesa, `--ipc host`;
+  output in `sandbox/out-rootfs-s/` (`shot_T.png`, `shot_T-cluster.png`, `cluster.log`). `--browser` keeps
   the browser (a sandbox-only stub fakes escalator and cgroups; CEF child crashes print a
   backtrace to qtcar.log), `-x FILE` adds gdb commands. QtCar remembers whether the Web app was
   open, so check the log for "select app: web" before tapping it (launcher 480,1140; Web 842,980).
@@ -103,6 +127,13 @@ podman run --rm --timeout 20 --network host -e QCSVC_NOUSER=1 --rootfs $PWD/sand
   values there explain many "works once, not again" effects. `vehicle/qtcar-settings.py` edits it.
 - `Logger::logAssert` crashes on purpose outside "prod" mode (kernel log `libQtCarUtils[b4703]`);
   the kit's `utils-assert-nonfatal` makes it log only.
+- S/X software rendering needs MIT-SHM, and the X server must be able to attach the segments of
+  QtCar's (and the games', Chromium's) users: the S profile's `mit_shm = "root"` runs Xvfb as root;
+  the stick's Xorg runs as root (xserver-xorg-legacy). Without it: black screens ("Failed to attach
+  to x11 shm") or interlaced half frames (the built-in games without MIT-SHM).
+- S/X QtCar takes `--key value` options into RuntimeEnv: `--emulated` = Tesla's desktop mode
+  (display devices count as powered/trained, asserts don't crash, "dev" mode); `/var/run/is-development`
+  = a development car. Readers: `RuntimeEnv::instance()` + the field offset (session 14 notes).
 - QtCar's executable has its own copies of some libQtCarGUI functions (e.g.
   `ChromiumManager::initializeCef`), and those win. Check a backtrace before patching the library.
 - Preload shims run against glibc 2.22: pin `dlsym` to `GLIBC_2.2.5` (on 2.22 it's in libdl, which
@@ -110,6 +141,8 @@ podman run --rm --timeout 20 --network host -e QCSVC_NOUSER=1 --rootfs $PWD/sand
   that pick up newer versions (`atoi`/`strtol` -> `__isoc23_strtol@GLIBC_2.38`). Check with
   `objdump -T x.so | grep GLIBC_`.
 - The escalator can exit on its own; `startup.sh` respawns it. Without it CEF init crashes QtCar.
+  (Model 3 only. The S/X image never runs the car's escalator: it can reboot the machine, format
+  USB drives and write GPIOs; its `escalator-stub` answers QtCar instead, `src/escalator-stub.c`.)
 - The sandbox and the real chroot share the host network (same service ports: 4160, 4220, 4030,
   4190, 1234, ...). Stop the sandbox (`podman ps`, `podman kill`) before the user runs
   `./tesla start` (it refuses to start while the ports are taken). A chroot service that ignores

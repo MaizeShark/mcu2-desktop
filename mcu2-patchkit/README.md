@@ -1,10 +1,38 @@
 # mcu2-patchkit
 
-Rebuilds the working Tesla Model 3 MCU chroot (firmware 2019.20.4.2) from the pristine
-dump in `../mcu2-original`: 5 byte patches in 4 binaries, preload shims, open-source libraries,
-config. `mcu2_patch.py --list` shows everything.
+Turns a pristine MCU2 firmware dump into a rootfs that runs in the chroot: binary patches,
+preload shims, open-source libraries, config. What that takes depends on the firmware, so each
+supported version has a **profile**; `mcu2_patch.py` detects which one a rootfs needs.
 
-## The binary patches
+| Profile | Firmware | What it does |
+|---|---|---|
+| `2019.20.4.2-model3` | Model 3, 2019.20.4.2 (dump in `../mcu2-original`) | 5 byte patches in 4 binaries, Mesa 18, CEF shims, audio, system config (below) |
+| `2026.8.3-models` | Model S/X, 2026.8.3 (`../mcu2s-original`) | Mesa 25.0.7 with llvmpipe, the escalator stub, the Chromium media/Browser/Theater jobs, audio, games, a few checked patches (below) |
+
+`mcu2_patch.py --profiles` lists them, `--list` shows everything a profile does.
+
+## Profiles
+
+```
+mcu2_patch.py          the engine: detection, applying, --check/--list, stamp, downloads
+src/                   shared by the profiles: qtcar-service.sh, sv-wrapper.sh
+profiles/<name>/
+  profile.toml         [detect] version + platform (+ car), [screen] sizes, [features]: ./tesla's defaults
+  kit.py               the tables: BINARIES, PAYLOAD_FILES, SYMLINKS, DIRECTORIES, TEXT_FILES, ...
+  sources.toml         where its payload files come from
+  src/                 what gets compiled for it (the Model 3's shims)
+payload/<name>/        downloaded / built files (untracked); downloads/ caches the packages
+```
+
+Detection: `usr/tesla/UI/bin/customerVersion.txt` (first word) and `UI_PLATFORM` in
+`etc/RunQtCar.env` must both match a profile's `[detect]`; an unknown firmware is refused
+(`--profile NAME` forces one). `--detect ROOT` prints the profile, `--info` its values as
+`key=value` for the shell tools (`profile_info` in tools/common.sh). A firmware of the same car
+with another version gets its own profile: binary patches are tied to exact files.
+
+## The Model 3 profile (2019.20.4.2)
+
+### The binary patches
 
 | Patch | File | Why |
 |---|---|---|
@@ -29,11 +57,11 @@ Tried instead of the assert patch: QtCar's `--prod` switch. It makes asserts non
 changes feature defaults (vector map tiles on: an empty map) and would be needed by every
 service; one 2-byte patch is simpler.
 
-## Contents
+### Contents
 
-| Path | What |
+| Path (in `profiles/2019.20.4.2-model3/`) | What |
 |---|---|
-| `mcu2_patch.py` | Applies everything. Idempotent, checks every patch's original bytes and SHA-1 first |
+| `kit.py` | The tables. The engine checks every patch's original bytes and SHA-1 first |
 | `sources.toml` | Where each library comes from: Ubuntu 16.04 package URL, sha256, path inside the package |
 | `src/icu_preload.c` | Source of `icu_preload.so` (verified: compiles to the same code) |
 | `src/egl_pixmap_shim.c` | Preloaded into QtCar: shows the browser's picture (EGL images from X pixmaps without DRI) and keeps the browser's window away from a desktop's window manager |
@@ -44,11 +72,12 @@ service; one 2-byte patch is simpler.
 The repository contains no binaries: the libraries are downloaded, the shims are built. For each
 file, `mcu2_patch.py` tries in order:
 
-1. `payload/<path>` (the local cache), if its hash matches;
-2. the `url` in `sources.toml`: a package (`.deb`, `.tar.*`, `.zip`) from the Ubuntu 16.04
+1. `payload/<profile>/<path>` (the local cache), if its hash matches (kits before profiles
+   cached in `payload/<path>`: a matching file there is taken over);
+2. the `url` in the profile's `sources.toml`: a package (`.deb`, `.tar.*`, `.zip`) from the Ubuntu 16.04
    archive with `member` naming the file inside. Packages are cached in `downloads/`. The
    download is checked against `sha256` and the extracted file against the exact hash in
-   `mcu2_patch.py`;
+   the profile's `kit.py`;
 3. for `icu_preload.so`, `egl_pixmap_shim.so` and `cef_nosandbox.so`: compiled from `src/` with
    gcc (the kit refuses a result that needs a glibc newer than the chroot's 2.22).
 
@@ -73,31 +102,58 @@ sudo python3 mcu2-patchkit/mcu2_patch.py /mnt/mcu3new
 sudo umount /mnt/mcu3new
 ```
 
-Another image: `IMAGE=` in `tesla.conf`.
+Another image: `IMAGE=` in `tesla.conf`. Another firmware: its own config file with `IMAGE=`,
+`DUMP=` and `SANDBOX_ROOT=` (e.g. `tesla-s.conf`), used with `./tesla --config tesla-s.conf build-image ...`.
 
 **Kit version**: after a successful run the kit writes `/etc/mcu2-patchkit` into the image
-(`kit=` a hash over `mcu2_patch.py` and `src/`, the git commit, the date, skipped groups).
-`./tesla check` compares it with the current kit and says when the image needs
-`./tesla build-image`. Any edit of `mcu2_patch.py` or `src/` changes the version, also a comment.
+(`kit=` a hash over `mcu2_patch.py`, `src/` and the profile's folder without `sources.toml`,
+`profile=`, the git commit, the date, skipped groups; stamps from before 2026-09-27 have no
+`profile=`: the Model 3 one). `./tesla check` compares it with the current kit and says when the
+image needs `./tesla build-image`. Any edit of those files changes the version, also a comment.
 
 ## Usage
 
 ```sh
-python3 mcu2_patch.py --list               # all groups / patches / files
+python3 mcu2_patch.py --profiles           # the profiles and the firmware each is for
+python3 mcu2_patch.py --list [--profile P] # all groups / patches / files (default: the Model 3's)
 sudo python3 mcu2_patch.py ROOT --check    # report only, changes nothing (text files: missing / N lines differ)
 sudo python3 mcu2_patch.py ROOT -q         # only what isn't already ok
-python3 mcu2_patch.py --kit-version        # the current kit version
+python3 mcu2_patch.py --kit-version --profile P   # the current kit version of a profile
 sudo python3 mcu2_patch.py ROOT            # apply
 sudo python3 mcu2_patch.py ROOT --skip cef --skip sim-no-di-2hz
 sudo python3 mcu2_patch.py ROOT --vin ... --birthday ...
 ```
 
-Groups: `core` (needed binary patches), `cef` (browser), `mesa`,
+Groups of the Model 3 profile: `core` (needed binary patches), `cef` (browser), `mesa`,
 `assets`, `system`, `identity`, `vehicle` (simulator without its drive-inverter module, for
 `--vehicle`, see `../vehicle/README.md`), `audio`. The script refuses to run while something is
 mounted inside ROOT, so stop QtCar first (`./tesla stop`). Patched and replaced files are kept as `<file>.orig`.
 
-## Differences from the old image
+## The Model S/X profile (2026.8.3)
+
+The firmware needs no binary patch to start (asserts already only log). Its Mesa 25.0.7 has only
+the Intel hardware drivers (iris, crocus): on Xvfb QtCar crashed creating its first EGL surface.
+The profile adds Debian 13's Mesa 25.0.7 (the same version, with llvmpipe and all Gallium
+drivers), glvnd, LLVM 19 and the nine libraries they need that the firmware lacks, in
+`/opt/mesa` next to the firmware's own. `/opt/mesa/env.sh` (sourced before QtCar/QtCarCluster)
+puts it first: `LD_LIBRARY_PATH`, `LIBGL_DRIVERS_PATH`, `GBM_BACKENDS_PATH`, the glvnd EGL vendor
+file. Software rendering also needs `LIBGL_ALWAYS_SOFTWARE=1`.
+
+Groups (`mcu2_patch.py --list` on its rootfs): `mesa`, `system` (startup.sh for QtCar and
+QtCarCluster `--emulated`, the escalator stub, settings.conf, D-Bus policies), `media` (the
+media/Browser/Theater Chromium jobs and their EGL pixmap shim; Chromium's scalar SHA-1/SHA-256 on
+CPUs without SHA-NI), `wifi` (ConnMan without the car's AppArmor hat), `games` (2048, chess and
+backgammon read the touchscreen in screen coordinates), `audio` (the amplifiers' card on
+snd-aloop, as for the Model 3), `camera` (the desktop camera without the car's deserializer).
+Maps are installed as for the Model 3 (`maps = true`; tiles with elevation, see
+`../navigation/README.md`). Retired: the earlier `NativeMaps::TileManager` patch and a games
+window size patch (the original bytes are restored). `./tesla start` feeds the host's internet status into
+QtCar's `LINK_linkState`, `LINK_wifiState`, and `CONN_connectedToInternet` data values instead.
+CenterDisplay computes `GUI_canUseInternet` for maps; MediaV2 separately uses
+`LINK_wifiState=online` for its internet availability. It does not set the car country. Details:
+`../notes/session9-2026-09-27.md` and `../notes/session10-2026-09-27.md`.
+
+## Differences from the old image (Model 3)
 
 - `icu_preload.so` lives in `/usr/lib` instead of `/tmp`, and `/startup.sh` points there.
 - `/startup.sh` also sets DNS (`/var/run/connman/resolv.conf`). Without it no map tiles

@@ -57,34 +57,53 @@ class Elf:
         return self.data[o:self.data.index(b"\0", o)].decode("latin-1")
 
     def ptr(self, va):
-        """(symbol, addend) of a relocated pointer, or (None, target address)."""
+        """(symbol, addend) of a relocated pointer, or (None, target address). Libraries linked
+        with compact relative relocations (DT_RELR, the 2026 firmware) keep the target in place."""
         r = self.rel.get(va)
-        return r if r else (None, 0)
+        if r:
+            return r
+        try:
+            return (None, struct.unpack("<Q", self.data[self.off(va):self.off(va) + 8])[0])
+        except KeyError:        # in .bss
+            return (None, 0)
+
+    def target(self, va):
+        """The address a pointer at va points to (0: none)."""
+        sym, add = self.ptr(va)
+        if sym:
+            return self.syms[sym][0] + add if sym in self.syms else 0
+        return add
 
 
-def read_tables(candata):
-    """Messages and signals from libQtCarCANData: ETH_messages + ETH_<msg>_signals + Diag maps."""
-    va, size = candata.syms["ETH_messages"]
+def buses(candata):
+    """The CAN buses the library has tables for: <BUS>_messages (the Model 3's 2019 firmware:
+    ETH only; the Model S 2026 one: BDY, BFT, CH, ETH, PT, TH)."""
+    return sorted(n[:-len("_messages")] for n in candata.syms if n.endswith("_messages") and n[:-9].isupper())
+
+
+def read_tables(candata, bus="ETH"):
+    """Messages and signals of one bus from libQtCarCANData: <BUS>_messages + <BUS>_<msg>_signals."""
+    va, size = candata.syms[bus + "_messages"]
     msgs = []
     for a in range(va, va + size, 48):
-        name = candata.cstr(candata.ptr(a)[1])
+        name = candata.cstr(candata.target(a))
         cid, dlc = candata.u32(a + 8), candata.u32(a + 12)
         period, nsig = candata.u32(a + 16), candata.u32(a + 20)
-        sym, add = candata.ptr(a + 40 - 8)
+        sva = candata.target(a + 32)
         sigs = []
-        if sym and sym in candata.syms:
-            sva = candata.syms[sym][0] + add
+        if sva:
             for i in range(nsig):
                 e = sva + 40 * i
-                sname = candata.cstr(candata.ptr(e)[1])
+                sname = candata.cstr(candata.target(e))
                 h = candata.u32(e + 8)
-                unit = candata.cstr(candata.ptr(e + 16)[1])
-                msym, madd = candata.ptr(e + 32)
+                ua = candata.target(e + 16)
+                unit = candata.cstr(ua) if ua else ""
+                m = candata.target(e + 32)
                 enum = {}
-                if msym and msym in candata.syms:
-                    m = candata.syms[msym][0] + madd
+                if m:
                     for k in range(64):
-                        label = candata.cstr(candata.ptr(m + 16 * k + 8)[1])
+                        la = candata.target(m + 16 * k + 8)
+                        label = candata.cstr(la) if la else ""
                         if not label:
                             break
                         enum[str(candata.i64(m + 16 * k) & 0xffffffff)] = label
@@ -94,10 +113,11 @@ def read_tables(candata):
 
 
 class Cracker:
-    """GUICanCracker::crackMessage(this, bus, id, data) in Unicorn."""
+    """<Cracker>::crackMessage(this, bus, id, data) in Unicorn: GUICanCracker in libQtCarVAPI, or
+    (the 2026 firmware) one Diag<BUS>Cracker per bus in libQtCarDiag."""
     STACK, DATA, THIS, STOP = 0x7f0000000000, 0x7f1000000000, 0x7f2000000000, 0x7f3000000000
 
-    def __init__(self, vapi):
+    def __init__(self, vapi, func="_ZN13GUICanCracker12crackMessageEiiPh", bus=3):
         from unicorn import Uc, UC_ARCH_X86, UC_MODE_64, UC_HOOK_CODE, UC_PROT_ALL
         from unicorn import x86_const as X
         self.X = X
@@ -110,7 +130,8 @@ class Cracker:
             mu.mem_write(s["p_vaddr"], vapi.data[s["p_offset"]:s["p_offset"] + s["p_filesz"]])
         for base in (self.STACK, self.DATA, self.THIS, self.STOP):
             mu.mem_map(base, 0x100000, UC_PROT_ALL)
-        self.func = vapi.syms["_ZN13GUICanCracker12crackMessageEiiPh"][0]
+        self.func = vapi.syms[func][0]
+        self.bus = bus
         # PLT stubs: find them by the call targets named in the disassembly (objdump-free: via .rela.plt)
         plt = {}
         relaplt = vapi.elf.get_section_by_name(".rela.plt")
@@ -151,7 +172,7 @@ class Cracker:
         mu.mem_write(rsp, struct.pack("<Q", self.STOP))
         mu.reg_write(X.UC_X86_REG_RSP, rsp)
         mu.reg_write(X.UC_X86_REG_RDI, self.THIS)
-        mu.reg_write(X.UC_X86_REG_RSI, 3)          # bus 3: the one crackMessage handles
+        mu.reg_write(X.UC_X86_REG_RSI, self.bus)   # the Model 3's GUICanCracker handles bus 3
         mu.reg_write(X.UC_X86_REG_RDX, cid)
         mu.reg_write(X.UC_X86_REG_RCX, self.DATA)
         mu.emu_start(self.func, self.STOP, count=200000)
@@ -244,6 +265,28 @@ def analyse(cr, cid, dlc, want=(), maxbases=1024):
     return result
 
 
+def cracker_for(bus, vapi, diag):
+    """(Cracker, bus number) for a bus table: Diag<BUS>Cracker (libQtCarDiag, 2026 firmware) if there
+    is one, else GUICanCracker. The number the cracker wants for it is found by trying."""
+    func, lib = "_ZN13GUICanCracker12crackMessageEiiPh", vapi
+    dsym = "_ZN%dDiag%sCracker12crackMessageEiiPh" % (len("Diag%sCracker" % bus), bus)
+    if diag and dsym in diag.syms:
+        func, lib = dsym, diag
+    return Cracker(lib, func), func
+
+
+def probe_bus(cr, msgs):
+    """The bus number (0..15) for which the cracker decodes these messages."""
+    best, most = None, 0
+    ids = [m["id"] for m in msgs if m["signals"]][:20]
+    for bus in range(16):
+        cr.bus = bus
+        n = sum(1 for cid in ids if cr.run(cid, bytes(8)))
+        if n > most:
+            best, most = bus, n
+    return best
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("rootfs")
@@ -252,34 +295,55 @@ def main():
     args = ap.parse_args()
     candata = Elf(os.path.join(args.rootfs, LIB, "libQtCarCANData.so"))
     vapi = Elf(os.path.join(args.rootfs, LIB, "libQtCarVAPI.so"))
-    msgs = read_tables(candata)
-    cr = Cracker(vapi)
+    dpath = os.path.join(args.rootfs, LIB, "libQtCarDiag.so")
+    diag = Elf(dpath) if os.path.exists(dpath) else None
     only = set(args.only.split(",")) if args.only else None
     out = {}
     nsig = nok = 0
-    for m in msgs:
-        if only and m["name"] not in only:
+    # ETH first: the gateway forwards many messages onto several buses (same name and signals, other
+    # ids); the ETH copy keeps the plain name, the others get "<name>@<BUS>"
+    all_buses = sorted(buses(candata), key=lambda b: (b != "ETH", b))
+    for busname in all_buses:
+        msgs = read_tables(candata, busname)
+        cr, func = cracker_for(busname, vapi, diag)
+        # the Model 3's 2019 firmware: ETH only, GUICanCracker's bus 3, sent with bus 0 in the
+        # UDP header (tesla-can.py); no "bus" in its database, as before
+        busno = probe_bus(cr, msgs) if len(all_buses) > 1 else 3
+        cr.bus = busno
+        label = "Diag%sCracker" % busname if "Diag" in func else "GUICanCracker"
+        print("%s: %d messages, %s, bus number %s" % (busname, len(msgs), label, busno), file=sys.stderr)
+        if busno is None:
             continue
-        lay = analyse(cr, m["id"], m["dlc"], [s["hash"] for s in m["signals"]])
-        sigs = {}
-        for s in m["signals"]:
-            nsig += 1
-            L = lay.get(s["hash"])
-            e = {"unit": s["unit"]} if s["unit"] else {}
-            if s["enum"]:
-                e["enum"] = s["enum"]
-            if L is None:
-                e["missing"] = True
-            else:
-                e.update(L)
-                if L.get("bits"):
-                    nok += 1
-                    if float(L["scale"]).is_integer():
-                        e["scale"] = int(L["scale"])
-                    if float(L["offset"]).is_integer():
-                        e["offset"] = int(L["offset"])
-            sigs[s["name"]] = e
-        out[m["name"]] = {"id": m["id"], "dlc": m["dlc"], "period_ms": m["period_ms"], "signals": sigs}
+        for m in msgs:
+            if only and m["name"] not in only:
+                continue
+            lay = analyse(cr, m["id"], m["dlc"], [s["hash"] for s in m["signals"]])
+            sigs = {}
+            for s in m["signals"]:
+                nsig += 1
+                L = lay.get(s["hash"])
+                e = {"unit": s["unit"]} if s["unit"] else {}
+                if s["enum"]:
+                    e["enum"] = s["enum"]
+                if L is None:
+                    e["missing"] = True
+                else:
+                    e.update(L)
+                    if L.get("bits"):
+                        nok += 1
+                        if float(L["scale"]).is_integer():
+                            e["scale"] = int(L["scale"])
+                        if float(L["offset"]).is_integer():
+                            e["offset"] = int(L["offset"])
+                sigs[s["name"]] = e
+            entry = {"id": m["id"], "dlc": m["dlc"], "period_ms": m["period_ms"], "signals": sigs}
+            key = m["name"]
+            if len(all_buses) > 1:
+                entry["bus"], entry["busname"] = busno, busname
+                if key in out:
+                    key = "%s@%s" % (m["name"], busname)
+                    entry["name"] = m["name"]
+            out[key] = entry
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     with open(args.output, "w") as f:
         json.dump(out, f, indent=1, sort_keys=True)

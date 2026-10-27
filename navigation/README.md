@@ -25,6 +25,16 @@ navigation/build-tiles.sh ~/Downloads/norcal-260922.osm.pbf US
 ./tesla start    # starts valhalla + qtcar-tmserver automatically once maps are installed
 ```
 
+## Elevation (for the 2026 Model S/X firmware)
+
+`build-tiles.sh` also downloads the SRTM elevation tiles for the extract's bounding box (read from
+the `.osm.pbf` header by `pbf-bbox.py`; the public "skadi" set of the AWS terrain tiles, 25 MB
+per 1x1 degree, kept in `work/elevation/`) and builds with `additional_data.elevation`, so every
+edge carries its elevation. The 2026.8.3 S/X TMServer computes a route's energy info from it;
+without it, it logs "missing elevation data", hands QtCar an empty route and the map draws no
+route line (turn-by-turn works). The 2019 Model 3 draws the line without it. Tiles built before
+2026-10-21 have no elevation: build them again.
+
 ## What QtCar needs (found 2026-09-23)
 
 - **Map folder**: `/opt/navigon/tm/NA/valhalla` for the US (QtCar: "Map directory for region does

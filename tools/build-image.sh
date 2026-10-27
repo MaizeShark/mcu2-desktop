@@ -9,13 +9,13 @@ only what's missing) and installs the offline maps built by navigation/build-til
 
   (no options)     update the image: kit + maps (needs sudo; not while ./tesla start runs)
   --check          only show what an update would change
-  --fresh          build a new image from the firmware dump in mcu2-original/ (copy, kit,
+  --fresh          build a new image from the firmware dump in $DUMP (copy, kit,
                    maps). The old image is kept as $(basename "$IMAGE").old. Settings QtCar
                    stored in the old image (car config, favorites, ...) start over.
   --size SIZE      size of a --fresh image (default 6G)
   --maps REGION    install these maps (navigation/work/tiles-REGION), e.g. US or EU
   --no-maps        leave the maps alone
-  --sandbox        update sandbox/rootfs instead (no sudo; for ./sandbox.sh)
+  --sandbox        update $SANDBOX_ROOT instead (no sudo; for ./sandbox.sh)
   -- ...           options for mcu2_patch.py, e.g. -- --skip cef --vin 5YJ3...
 
 What the kit does: mcu2-patchkit/README.md; mcu2_patch.py --list lists every patch.
@@ -55,9 +55,15 @@ update_root() {
     local root=$1 sudo=$2 region
     step "Patch kit"
     $sudo python3 "$KIT" "$root" -q "${KIT_ARGS[@]}" | sed 's/^/    /'
+    # the kit's download/build cache stays the user's (else a later --sandbox can't add to it)
+    [ -z "$sudo" ] || sudo chown -R "$(id -u):$(id -g)" "$TESLA_DIR/mcu2-patchkit/payload" 2>/dev/null
     [ "${PIPESTATUS[0]}" = 0 ] || die "the patch kit reported errors (above)"
     [ "$MAPS" = none ] && return
     step "Maps"
+    if [ "$(profile_info "$root" maps)" != true ]; then
+        info "not for this firmware yet (profile $(profile_info "$root" profile))"
+        return
+    fi
     region=$(pick_maps "$root")
     if [ -n "$region" ]; then
         $sudo navigation/install-maps.sh "$root" "$region" | sed 's/^/    /'
@@ -74,6 +80,7 @@ check_root() {
     $sudo python3 "$KIT" "$root" --check -q "${KIT_ARGS[@]}" | sed 's/^/    /'
     [ "$MAPS" = none ] && return
     step "Maps"
+    [ "$(profile_info "$root" maps)" = true ] || { info "not for this firmware yet"; return; }
     have=$(cat "$root/opt/navigon/VERSION" 2>/dev/null)
     region=$(pick_maps "$root")
     if [ -n "$region" ]; then
@@ -101,9 +108,7 @@ with_image() {
 }
 
 build_fresh() {
-    local orig=$TESLA_DIR/mcu2-original new=$IMAGE.new mnt
-    # the dump's folder was called mcu3-original until 2026-09-25
-    [ ! -d "$orig" ] && [ -d "$TESLA_DIR/mcu3-original" ] && orig=$TESLA_DIR/mcu3-original
+    local orig=$DUMP new=$IMAGE.new mnt
     [ -f "$orig/usr/tesla/UI/bin/QtCar" ] || die "no firmware dump in $orig (usr/tesla/UI/bin/QtCar missing)"
     image_mounted >/dev/null && die "$CHROOT has an image mounted; unmount it first: sudo umount $CHROOT"
     if [ -e "$IMAGE" ]; then
@@ -152,9 +157,9 @@ cmd_build_image() {
     fi
     case "$mode" in
         sandbox)
-            [ -d sandbox/rootfs/usr/tesla ] || die "no sandbox/rootfs (see CLAUDE.md)"
+            [ -d "$SANDBOX_ROOT/usr/tesla" ] || die "no sandbox rootfs at $SANDBOX_ROOT (see docs/development.md)"
             podman ps -q 2>/dev/null | grep -q . && warn "podman containers run; the sandbox may see a mix of old and new files"
-            update_root "$TESLA_DIR/sandbox/rootfs" "" ;;
+            update_root "$SANDBOX_ROOT" "" ;;
         check)
             sudo_auth || exit 1
             with_image check_root ;;

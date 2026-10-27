@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """
-Turn a pristine Tesla Model 3 MCU rootfs (firmware 2019.20.4.2, x86_64) into the
-state that runs QtCar in a chroot on a desktop Linux host (see start_all.sh).
+Turn a pristine Tesla MCU2 rootfs (x86_64) into the state that runs QtCar in a chroot on a
+desktop Linux host (./tesla start). What gets done depends on the firmware: each supported
+version has a profile in profiles/<name>/ (profile.toml: which firmware, ./tesla's defaults;
+kit.py: the binary patches, payload files, symlinks, directories, text files; sources.toml:
+where the payload comes from; src/: what gets compiled). The profile is detected from the
+rootfs (usr/tesla/UI/bin/customerVersion.txt and UI_PLATFORM in etc/RunQtCar.env).
 
-  * 5 byte patches: libQtCarUtils (asserts only log), libcef (WebAudio oscillator),
-    libQtCarSim (no drive inverter), audiod (no A2B); patches of earlier kits that turned out
-    unnecessary are restored to the firmware's bytes where found ('retired')
-  * Mesa 18.0.5 + LLVM 6.0 + deps (downloaded per sources.toml, cached in payload/)
-  * preload shims built from src/ (icu_preload, egl_pixmap_shim, cef_nosandbox)
-  * config / directories / symlinks / startup script / qtcar-service
+  profiles/2019.20.4.2-model3   Model 3: 5 byte patches, Mesa 18, CEF shims, audio, ...
+  profiles/2026.8.3-models      Model S/X: Mesa 25 with llvmpipe (Debian 13)
 
 Usage:
   sudo python3 mcu2_patch.py /path/to/rootfs              # apply everything
   sudo python3 mcu2_patch.py /path/to/rootfs --check      # only report status
-  python3 mcu2_patch.py --list                            # list steps and patches
+  python3 mcu2_patch.py --list [--profile NAME]           # list steps and patches
+  python3 mcu2_patch.py --profiles                        # the profiles and what they match
   sudo python3 mcu2_patch.py ROOT --skip cef --skip identity
   sudo python3 mcu2_patch.py ROOT --vin 5YJ3... --birthday ...
 
@@ -22,380 +23,90 @@ Patched binaries are backed up as <file>.orig (unless --no-backup).
 """
 import argparse
 import hashlib
+import importlib.util
 import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import urllib.request
 
 KIT = os.path.dirname(os.path.abspath(__file__))
-PAYLOAD = os.path.join(KIT, 'payload')
-SOURCES = os.path.join(KIT, 'sources.toml')      # download URLs for payload files
-DOWNLOADS = os.path.join(KIT, 'downloads')       # cache for downloaded packages
+PROFILES = os.path.join(KIT, 'profiles')
+SHARED_SRC = os.path.join(KIT, 'src')             # used by several profiles (qtcar-service, sv wrapper)
+PAYLOAD_ROOT = os.path.join(KIT, 'payload')       # payload/<profile>/<path>: downloaded / built files
+DOWNLOADS = os.path.join(KIT, 'downloads')        # cache for downloaded packages (all profiles)
 TESLA_UID = TESLA_GID = 1111
+# images stamped before profiles existed (2026-09-27) were all built for this one
+LEGACY_PROFILE = '2019.20.4.2-model3'
+
+P = None            # the loaded profile's kit.py (a module)
+PROFILE = None      # its name (folder)
+PAYLOAD = None      # payload/<profile>
+
 
 # ---------------------------------------------------------------------------
-# Binary patches: (id, group, file offset, original bytes, patched bytes, description)
-# Offsets are file offsets (== virtual addresses for these binaries).
-# ---------------------------------------------------------------------------
-BINARIES = [
-    {
-        'path': 'usr/tesla/UI/bin/QtCar',
-        'sha1_orig': '53f1c1bd1770fe5528ab29f2d797ef7b645f41db',
-        'patches': [],
-        # the escalator's cgroup setup succeeds in the chroot (./tesla start mounts net_cls; QtCar
-        # ends up in net_cls:/qtcar), so QtCar's exit(1) on failure never happens (2026-09-25)
-        'retired': [
-            ('qtcar-cgroup-exit-1', 'core', 0x2ea5e5, 'e80645f7ffbf01000000e85c48f7ff', '9090909090bf010000009090909090',
-             'ChromiumManager::initializeCef: perror("failed to set internet-cgroups") + exit(1)'),
-            ('qtcar-cgroup-exit-2', 'core', 0x2ea691, 'e85a44f7ffe94f', '9090909090e959',
-             'ChromiumManager::initializeCef: perror("failed to set qtcar-cgroups") + exit(1)'),
-        ],
-    },
-    {
-        'path': 'usr/tesla/UI/lib/libQtCarGUI.so.1.0.0',
-        'sha1_orig': 'df5b74322502ea348e259d1c3b432c1e0c0b4421',
-        'patches': [
-        ],
-        # patches of earlier kits that do nothing (or no longer apply): put back where found.
-        # (id, group, offset, firmware bytes, bytes an earlier kit wrote, why)
-        'retired': [
-            # an assert only logs (utils-assert-nonfatal); the branch logs and continues
-            ('gui-energy-roadload', 'core', 0xd75ed8, '0f8502020000', '909090909090',
-             'EnergyModelUtils::roadLoadEstimateFor: carType assert (hid a log line)'),
-            ('gui-energy-driveunit', 'core', 0xd7617d, '7571', '9090', 'EnergyModelUtils::driveUnitConfig: same'),
-            ('gui-energy-pack', 'core', 0xd762af, '752f', '9090', 'EnergyModelUtils::packEnergy_kWh: same'),
-            ('gui-escalator-1', 'core', 0x7c26a3, 'e8d89bf1ff', '31c0909090',
-             'libQtCarGUI\'s ChromiumManager::initializeCef is never called: QtCar has its own copy'),
-            ('gui-escalator-2', 'core', 0x7c295f, 'e81c99f1ff', '31c0909090', 'same'),
-            ('gui-cgroup-exit-1', 'core', 0x7c32a5, 'e81609f2ffbf01000000e8cc99f2ff', '9090909090bf010000009090909090',
-             'same (qtcar-cgroup-exit-* patch the copy in QtCar)'),
-            ('gui-cgroup-exit-2', 'core', 0x7c3351, 'e86a08f2ffe94f', '9090909090e959', 'same'),
-            ('gui-camera-reset', 'core', 0xd3f760, '4155be', '31c0c3',
-             'the old "no cameras" stub CameraStream::resetDevice() -> 0 (the backup camera works)'),
-            ('gui-camera-init', 'core', 0xd43000, '55beff', '31c0c3', 'the old stub CameraStream::initDevice() -> 0'),
-            ('gui-video-ximagesink', 'core', 0x12f2e93, b'xvimagesink'.hex(), b'ximagesink\0'.hex(),
-             'a gst-launch pipeline string nobody uses (the videos play in /usr/bin/tvideo)'),
-            ('gui-cef-nosandbox', 'cef', 0x12ae593, '498d7c2408498d75', '41c7431001000000',
-             'no_sandbox in the library\'s initializeCef copy (unused); src/cef_nosandbox.c sets it'),
-        ],
-    },
-    {
-        'path': 'usr/tesla/UI/lib/libQtCarUtils.so.1.0.0',
-        'sha1_orig': '7286a3e0c86b69962ea1b102c48aa69432852fce',
-        'patches': [
-            ('utils-assert-nonfatal', 'core', 0xb4703, 'c604', 'eb0b',
-             'Logger::logAssert: skip the deliberate write to address 0 outside "prod" mode, so a '
-             'failed assert is only logged, like on the car (was: media button asserts crashed QtCar)'),
-        ],
-        # NOPs of single logAssert calls: with logAssert log-only they only hid a log line
-        'retired': [
-            ('utils-assert-ctor', 'core', 0xaf0ea, 'e87113feff', '9090909090', 'DataValue::DataValue: logAssert'),
-            ('utils-assert-protected', 'core', 0xaf69f, 'e8bc0dfeff', '9090909090',
-             'DataValue::setValueNoLock: "protected DataValue" logAssert'),
-            ('utils-assert-duplicate', 'core', 0xc3997, 'e8c4cafcff', '9090909090',
-             'DataValueManager::addValue: "Duplicate data value" logAssert'),
-        ],
-    },
-    {
-        'path': 'usr/tesla/UI/lib/libQtCarMediaV2.so.1.0.0',
-        'sha1_orig': '89923a08454a1b9dd459a389184806c1eef1b14f',
-        'patches': [
-        ],
-        'retired': [
-            ('media-assert-pause', 'core', 0x463763, 'e8680df8ff', '9090909090',
-             'MediaV2::MediaMasterSourceController::pause: logAssert (only hid a log line)'),
-        ],
-    },
-    {
-        # Tesla's CEF 3.3683 (Chrome 73) is built with Blink's stub FFT (fft_frame_stub.cc: FFTFrame
-        # allocates nothing). Any page that creates a WebAudio OscillatorNode makes
-        # PeriodicWave::CreateBandLimitedTables write into the null FFT arrays (VectorMath::Vsmul)
-        # and the renderer dies ("tesla-cef-zygot segfault ... libcef.so[4165885]"). Many sites do
-        # (fingerprinting / bot detection), tesla.com too. createOscillator() now returns null.
-        'path': 'usr/lib/libcef.so',
-        'sha1_orig': '975741de4fff287a55d498cf137e104623d23852',
-        'patches': [
-            ('cef-no-oscillator', 'cef', 0x8170490, '554889', '31c0c3',
-             'BaseAudioContext::createOscillator() -> return null (WebAudio FFT is a stub in this build)'),
-        ],
-    },
-    {
-        # QtCarSimService (vehicle simulator, qtcar-service qtcar-sim): with the drive rail on it
-        # also simulates the drive inverter, but its gear/speed don't follow SIM_shiftState /
-        # SIM_vehicleSpeed and DI_vehicleSpeed comes out as -40 km/h. vehicle/tesla-can.py sends
-        # the DI frames instead, so the sim's DI module is switched off.
-        'path': 'usr/tesla/UI/lib/libQtCarSim.so.1.0.0',
-        'sha1_orig': '96bcf8a90c03a7fa2183e9a62d53121ae1e31a26',
-        'patches': [
-            ('sim-no-di-2hz', 'vehicle', 0x51cd60, '4155b908', 'c355b908',
-             'SimDriveInverter::send2Hz() -> return (no DI frames from the simulator)'),
-            ('sim-no-di-10hz', 'vehicle', 0x523180, '41574156', 'c3574156',
-             'SimDriveInverter::send10Hz() -> return (no DI_systemStatus/DI_speed/odometer frames)'),
-        ],
-    },
-    {
-        # audiod does the audio I/O for AudioWeaver (DSP) and pumps it. Once the A2B PCM device
-        # pumps, its main loop brings up the A2B stack (transceiver on /dev/i2c-4, amplifiers,
-        # microphones); without that hardware a2b_stackAlloc fails and audiod exits. The base
-        # amp output alone is enough on a PC, so never start A2B.
-        'path': 'usr/bin/audiod',
-        'sha1_orig': '0ef70bcffe81e771d3b042970e972a3cbffc79e2',
-        'patches': [
-            ('audiod-no-a2b', 'audio', 0xa0aa, '488d0d', '31c0c3',
-             'audiod: "is the A2B device pumping" -> 0, no A2B stack (no /dev/i2c-4 on a PC)'),
-        ],
-    },
-]
+# Profiles
 
-# ---------------------------------------------------------------------------
-# Files the kit adds (downloaded per sources.toml or built from src/, cached in payload/): (group, path, mode, sha1)
-# ---------------------------------------------------------------------------
-PAYLOAD_FILES = [
-    # Mesa 18.0.5 swrast (Ubuntu) replaces Tesla's GL stack, which does not work on Xvfb
-    ('mesa', 'usr/lib/dri/swrast_dri.so', 0o644, 'e79ef300403a067005be6480841930965d8d7e64'),
-    # Intel GPUs (./tesla start --native): the firmware's own i965 is Mesa 11.2.2 (2016), which
-    # knows the car's Apollo Lake but not newer GPUs such as Kaby Lake. Mesa 18.0.5's knows them.
-    ('mesa', 'usr/lib/dri/i965_dri.so', 0o644, 'c9d25e4f047893cd423d11cba4379db278c50570'),
-    ('mesa', 'usr/lib/libglapi.so.0.0.0', 0o755, '17173722ee272789ff970d1ea45cb0694a5c27c9'),
-    ('mesa', 'usr/lib/libdrm.so.2.4.0', 0o644, '20611823a72925941768e3c50844ffa42f811913'),
-    ('mesa', 'usr/lib/libdrm_intel.so.1.0.0', 0o644, '8e3131c329c05700c3611c2cb73523ad830456a8'),
-    ('mesa', 'usr/lib/libdrm_amdgpu.so.1.0.0', 0o644, 'a59141838c286e6b733cd01e5ed3f6d6d688aedd'),
-    ('mesa', 'usr/lib/libdrm_nouveau.so.2.0.0', 0o644, '125decd5b11f506ffd816cb0fa64a547814bdb60'),
-    ('mesa', 'usr/lib/libdrm_radeon.so.1.0.1', 0o644, '8ba204b8d56d6c10dd91cb20e0d6394324483222'),
-    ('mesa', 'usr/lib/libffi.so.6.0.4', 0o644, 'a5be37d7823f44e5cb5399a41df25c76f4e1649d'),
-    ('mesa', 'usr/lib/libLLVM-6.0.so.1', 0o644, 'cb66fc578ab21f183fc2ed8e64082757c8d92b1b'),
-    ('mesa', 'usr/lib/libLLVM-3.8.so.1', 0o644, 'abea0c731126dfbfc04ad61c4d154a5dfe11f291'),
-    ('mesa', 'usr/lib/libbsd.so.0.8.2', 0o644, 'c3e805c53edb389d81371800c2dc4d87ee6f60e4'),
-    ('mesa', 'usr/lib/libedit.so.2.0.53', 0o644, '40321cfa7515de7c8889796bdbf8755c92e2b6c4'),
-    ('mesa', 'usr/lib/libelf-0.165.so', 0o644, 'c3e1a15086816cb6cb7ed96e9884373222340f5c'),
-    ('mesa', 'usr/lib/libexpatw.so.1.6.0', 0o644, '70f1d3fcde86b8d23b3b0abe79fc52ced557b688'),
-    ('mesa', 'usr/lib/libsensors.so.4.4.0', 0o644, 'b68396fbd099769297be424b72a6505eca9838da'),
-    ('mesa', 'usr/lib/libtic.so.5.9', 0o644, '9cf8c1943c093e781b747de427b03f8146844031'),
-    ('mesa', 'usr/lib/libtinfo.so.5.9', 0o644, '2bd9389f52439de7a42efcb8a3c3f8d4c881e8b2'),
-    # Passes an fd for icudtl.dat to CEF (fixes "Invalid file descriptor to ICU data"). src/icu_preload.c
-    # Was /tmp/icu_preload.so in the original setup; moved out of /tmp so it can't get cleaned away.
-    ('system', 'usr/lib/icu_preload.so', 0o755, 'a3da594a29ad33acc8ab61fa57e1139759804e4b'),
-    # Shows the browser: emulates EGL images from X pixmaps, which Xvfb + Mesa swrast can't do.
-    # Always built from src/egl_pixmap_shim.c (no fixed hash).
-    ('cef', 'usr/lib/egl_pixmap_shim.so', 0o755, '-'),
-    # Sets CefSettings.no_sandbox (and optional CEF logging / DevTools) via a cef_initialize()
-    # wrapper. Always built from src/cef_nosandbox.c.
-    ('cef', 'usr/lib/cef_nosandbox.so', 0o755, '-'),
-]
+def profile_names():
+    return sorted(d for d in os.listdir(PROFILES) if os.path.isfile(os.path.join(PROFILES, d, 'profile.toml')))
 
-# Files earlier kits added that aren't needed: removed where found (with their .orig backups).
-# They aren't in the firmware, so whatever is there is the kit's. (group, path, why)
-RETIRED_FILES = [
-    ('cef', 'usr/tesla/UI/bin/chrome-sandbox',
-     'fake setuid sandbox helper: CEF runs with no_sandbox (src/cef_nosandbox.c) and never starts it'),
-    ('cef', 'usr/tesla/UI/lib/chrome-sandbox', 'patched copy of /usr/lib/chrome-sandbox, unused for the same reason'),
-]
 
-# (group, link path, target)
-SYMLINKS = [
-    # AMD GPUs (./tesla start --native --gpu): radeonsi (GCN) and r600 (TeraScale, e.g. HD 6670)
-    # are part of the Gallium megadriver
-    ('mesa', 'usr/lib/dri/radeonsi_dri.so', 'swrast_dri.so'),
-    ('mesa', 'usr/lib/dri/r600_dri.so', 'swrast_dri.so'),
-    ('mesa', 'usr/lib/libLLVM-6.0.so', 'libLLVM-6.0.so.1'),
-    ('mesa', 'usr/lib/libLLVM-3.8.so', 'libLLVM-3.8.so.1'),
-    ('mesa', 'usr/lib/libbsd.so.0', 'libbsd.so.0.8.2'),
-    ('mesa', 'usr/lib/libdrm_amdgpu.so.1', 'libdrm_amdgpu.so.1.0.0'),
-    ('mesa', 'usr/lib/libdrm_nouveau.so.2', 'libdrm_nouveau.so.2.0.0'),
-    ('mesa', 'usr/lib/libdrm_radeon.so.1', 'libdrm_radeon.so.1.0.1'),
-    ('mesa', 'usr/lib/libedit.so.2', 'libedit.so.2.0.53'),
-    ('mesa', 'usr/lib/libelf.so.1', 'libelf-0.165.so'),
-    ('mesa', 'usr/lib/libexpatw.so.1', 'libexpatw.so.1.6.0'),
-    ('mesa', 'usr/lib/libsensors.so.4', 'libsensors.so.4.4.0'),
-    ('mesa', 'usr/lib/libtic.so.5', 'libtic.so.5.9'),
-    ('mesa', 'usr/lib/libtinfo.so.5', 'libtinfo.so.5.9'),
-    ('assets', 'usr/tesla/UI/assets/day/about/badge_model_s_cid.png',
-     '/usr/tesla/UI/assets/day/about/badge_model_3_cid.png'),
-    ('assets', 'usr/tesla/UI/assets/night/about/badge_model_s_cid.png',
-     '/usr/tesla/UI/assets/night/about/badge_model_3_cid.png'),
-    ('assets', 'usr/tesla/UI/assets/night/car/park/roof_glass.png', '../hero/roof_glass.png'),
-    ('cef', 'usr/tesla/UI/lib/libcef.so', '/usr/lib/libcef.so'),
-    ('cef', 'usr/tesla/UI/lib/icudtl.dat', '/usr/lib/icudtl.dat'),
-    ('cef', 'usr/tesla/UI/lib/locales', '/usr/lib/locales'),
-    ('cef', 'usr/tesla/UI/lib/natives_blob.bin', '/usr/lib/natives_blob.bin'),
-    ('cef', 'usr/tesla/UI/lib/snapshot_blob.bin', '/usr/lib/snapshot_blob.bin'),
-    ('cef', 'usr/tesla/UI/lib/cef.pak', '/usr/lib/cef.pak'),
-    ('cef', 'usr/tesla/UI/lib/cef_100_percent.pak', '/usr/lib/cef_100_percent.pak'),
-    ('cef', 'usr/tesla/UI/lib/cef_200_percent.pak', '/usr/lib/cef_200_percent.pak'),
-    ('cef', 'usr/tesla/UI/lib/cef_extensions.pak', '/usr/lib/cef_extensions.pak'),
-    # CEF looks for its resources next to libcef.so, which the link above puts in UI/lib. Without
-    # this one every renderer dies with "Failed to deserialize the V8 snapshot blob".
-    ('cef', 'usr/tesla/UI/lib/v8_context_snapshot.bin', '/usr/lib/v8_context_snapshot.bin'),
-    ('cef', 'usr/tesla/UI/lib/devtools_resources.pak', '/usr/lib/devtools_resources.pak'),
-    ('cef', 'usr/tesla/UI/lib/swiftshader', '/usr/lib/swiftshader'),
-]
+def profile_meta(name):
+    with open(os.path.join(PROFILES, name, 'profile.toml'), 'rb') as f:
+        return tomllib.load(f)
 
-# Directories QtCar expects, plus mount points used by start_all.sh. (path, owner uid or None)
-# (path, mode) of existing directories whose mode needs changing
-DIR_MODES = [
-    # CEF's cache/cookies/local storage (cache_path). The browser process is QtCar (user tesla,
-    # member of group tesla-cef), but the directory is 0755 tesla-cef: "Unable to create cache",
-    # "Cookie sqlite error 14".
-    ('home/tesla-cef', 0o775),
-]
 
-DIRECTORIES = [
-    ('home/tesla', TESLA_UID),
-    ('home/tesla/.Tesla/car', TESLA_UID),
-    ('home/tesla/.Tesla/data', TESLA_UID),
-    ('root/.Tesla/car', None),
-    ('root/.Tesla/data/media', None),
-    ('root/.Tesla/cache', None),
-    ('root/.Tesla/browser', None),
-    ('var/lock', None),
-    ('run/connman', None),
-    ('var/etc/qtcar-connman', None),   # qtcar-connman caches its cellular policy here
-    ('dev/input', None),
-    ('dev/shm', None),
-    ('sys/fs/cgroup/net_cls', None),
-    ('sys/fs/cgroup/memory', None),
-]
-EMPTY_FILES = ['dev/null', 'dev/random', 'dev/urandom', 'var/lock/log-top']  # bind-mount targets / lock file
+def firmware_id(root):
+    """(version, platform) of a rootfs: customerVersion.txt's first word, RunQtCar.env's UI_PLATFORM."""
+    version = platform = None
+    try:
+        with open(os.path.join(root, 'usr/tesla/UI/bin/customerVersion.txt')) as f:
+            version = (f.read().split() or [None])[0]
+    except OSError:
+        pass
+    try:
+        with open(os.path.join(root, 'etc/RunQtCar.env')) as f:
+            m = re.search(r'^UI_PLATFORM=\$\{UI_PLATFORM:-(\w+)\}', f.read(), re.M)
+            platform = m and m.group(1)
+    except OSError:
+        pass
+    return version, platform
 
-STARTUP_SH = r'''#!/bin/sh
-# Run inside chroot as root (started by start_all.sh on the host)
-export PATH=/bin:/usr/bin:/sbin:/usr/sbin:/usr/local/bin
 
-# Kernel settings. NOTE: /proc is the host's, so these change the HOST kernel until reboot.
-echo 1 > /proc/sys/vm/overcommit_memory
-echo 0 > /proc/sys/vm/mmap_min_addr
+def detect_profile(root):
+    version, platform = firmware_id(root)
+    for name in profile_names():
+        d = profile_meta(name).get('detect', {})
+        if d.get('version') == version and d.get('platform') == platform:
+            return name
+    sys.exit(f'{root}: firmware {version or "?"} (UI_PLATFORM {platform or "?"}) has no kit profile '
+             f'(--profiles lists them; --profile NAME forces one)')
 
-# Cgroups QtCar / CEF expect (net_cls is mounted by start_all.sh)
-mkdir -p /sys/fs/cgroup/net_cls/nonet
-mkdir -p /sys/fs/cgroup/net_cls/qtcar
-mkdir -p /sys/fs/cgroup/net_cls/internet-cgroup
-mkdir -p /sys/fs/cgroup/net_cls/qtcar-cgroup
-mkdir -p /sys/fs/cgroup/net_cls/internet
-mkdir -p /sys/fs/cgroup/net_cls/tesla-cef
-mkdir -p /sys/fs/cgroup/memory/cef
-mkdir -p /var/lock
 
-# DNS (connman is not running; /etc/resolv.conf points here). Needed for map tiles.
-mkdir -p /var/run/connman
-echo "nameserver 8.8.8.8" > /var/run/connman/resolv.conf
+def load_profile(name):
+    global P, PROFILE, PAYLOAD
+    d = os.path.join(PROFILES, name)
+    if not os.path.isfile(os.path.join(d, 'kit.py')):
+        sys.exit(f'no kit profile {name!r} ({", ".join(profile_names())})')
+    spec = importlib.util.spec_from_file_location(f'kit_profile_{name}', os.path.join(d, 'kit.py'))
+    mod = importlib.util.module_from_spec(spec)
+    mod.KIT, mod.PROFILE_DIR, mod.TESLA_UID = KIT, d, TESLA_UID
+    mod.shared_src = lambda n: open(os.path.join(SHARED_SRC, n)).read()
+    spec.loader.exec_module(mod)
+    defaults = {'BINARIES': [], 'PAYLOAD_FILES': [], 'RETIRED_FILES': [], 'SYMLINKS': [], 'DIR_MODES': [],
+                'DIRECTORIES': [], 'EMPTY_FILES': [], 'SETTINGS_KEYS': {}, 'SETTINGS_FILES': [],
+                'TEXT_FILES': [], 'ASOUND_BLOCK': None, 'ASOUND_AWE': None, 'GROUPS': {}, 'BUILDABLE': {},
+                'GLIBC': None,
+                'TESLA_SHELL': True, 'KEEP_BINARY': {}}
+    for k, v in defaults.items():
+        if not hasattr(mod, k):
+            setattr(mod, k, v)
+    P, PROFILE, PAYLOAD = mod, name, os.path.join(PAYLOAD_ROOT, name)
+    return mod
 
-# Escalator (privileged helper QtCar talks to via /tmp/escalator). It sometimes exits after a
-# request it can't serve (seen: starting the dashcam daemon on QtCar's first start), and
-# QtCar's ChromiumManager::initializeCef crashes without it ("Memory corruption detected").
-# So keep it in a respawn loop, one loop across QtCar restarts, and wait for its socket.
-if ! grep -qs 'escalator-loo[p]' /proc/[0-9]*/cmdline; then  # [p]: don't match this grep
-    sh -c 'while :; do
-        pidof escalator >/dev/null || { rm -f /tmp/escalator; /usr/bin/escalator; }
-        sleep 1
-    done' escalator-loop </dev/null >/dev/null 2>&1 &
-fi
-for i in $(seq 50); do [ -S /tmp/escalator ] && break; sleep 0.1; done
-
-# OpenGL: software (llvmpipe) unless ./tesla start passes QTCAR_GL=hardware (native screen with
-# a GPU). Then the driver is named, since the firmware's libGL (Mesa 11.2) doesn't know newer GPUs.
-if [ "$QTCAR_GL" = hardware ]; then
-    GL_ENV="MESA_LOADER_DRIVER_OVERRIDE=${QTCAR_GL_DRIVER:-i965}"
-else
-    GL_ENV="LIBGL_ALWAYS_SOFTWARE=1"
-fi
-
-# Launch. ./tesla start passes QTCAR_DISPLAY, QTCAR_XAUTHORITY (native mode: the real screen)
-# and QTCAR_ARGS (e.g. --size WxH for a screen that isn't 1920x1200).
-su tesla -c "cd /usr/tesla/UI/bin && \
-  DISPLAY=${QTCAR_DISPLAY:-:1} \
-  XAUTHORITY=${QTCAR_XAUTHORITY:-/root/.Xauthority} \
-  LD_LIBRARY_PATH=/usr/tesla/UI/lib:/usr/cid-lib:/usr/lib64:/lib64:/lib:/usr/lib \
-  LC_ALL=C LANG=C LANGUAGE=C \
-  QT_X11_NO_MITSHM=1 \
-  $GL_ENV \
-  LD_PRELOAD=/usr/lib/icu_preload.so:/usr/lib/egl_pixmap_shim.so:/usr/lib/cef_nosandbox.so \
-  EGL_PIXMAP_SHIM_DEBUG=1 \
-  CEF_SHIM_DEBUG=1 CEF_LOG_SEVERITY=warning CEF_REMOTE_DEBUGGING_PORT=9222 \
-  ./QtCar --touch evdev,autorange $QTCAR_ARGS"
-'''
-
-# Car config keys the kit sets in settings.conf. Only these keys are touched; other settings
-# (e.g. [nav] from navigation/install-maps.sh) stay as they are.
-SETTINGS_KEYS = {'General': {'VAPI_carType': '3', 'VAPI_trim': '0', 'VAPI_chassisType': '0'},
-                 # audio-type asks the gateway (gw-diag), which isn't there, and then says "premium"
-                 # (amplifiers on the A2B bus); base = the MCU's own amp output (card model3, pcm 0)
-                 'audiod': {'audio_type': 'base'},
-                 # USB sticks are found under $HOME/media/usb-* (StorageUtils::usbMediaFolder); the
-                 # media server runs with its own HOME, the udev rule mounts under /home/tesla/media
-                 'usb': {'media_path': '/home/tesla/media'},
-                 # QtCarVehicle's TPMS filter (TPMSStatusMessage::filterStatus): on (the default) it
-                 # keeps the old warning values, so a low tire never showed a warning here
-                 'vapi': {'filter_tpms_faults': 'false'}}
-# QtCar runs as user tesla and reads /home/tesla/.Tesla/car; the /root copy is from when it
-# still ran as root. (path, owner uid)
-SETTINGS_FILES = [
-    ('home/tesla/.Tesla/car/settings.conf', TESLA_UID),
-    ('root/.Tesla/car/settings.conf', 0),
-]
-
-# (group, path, content, mode[, owner uid])
-TEXT_FILES = [
-    ('system', 'run/connman/resolv.conf', 'nameserver 8.8.8.8\n', 0o644),
-    ('system', 'startup.sh', STARTUP_SH, 0o755),
-    # starts the firmware's other QtCar services (qtcar-vehicle, qtcar-tmserver, ...), see start_all.sh
-    ('system', 'usr/local/bin/qtcar-service', open(os.path.join(KIT, 'src/qtcar-service.sh')).read(), 0o755),
-    # no runit in the chroot: the escalator's "sv start fireplace" etc. go to qtcar-service
-    # (runit's sv stays as /sbin/sv.runit for everything else)
-    ('system', 'sbin/sv', open(os.path.join(KIT, 'src/sv-wrapper.sh')).read(), 0o755),
-]
-
-# No "model3" sound card on a PC. start_all.sh (AUDIO=1) loads snd-aloop as card "model3"; the
-# car's PCM devices 0 (base amp) and 2 (A2B) become subdevices 0 and 2 of loopback device 0, and
-# start_all.sh plays what AudioWeaver writes there from loopback device 1 on the host.
-ASOUND_MARK = '# --- mcu2-patchkit: sound card on a PC ---'
-ASOUND_BLOCK = ASOUND_MARK + '''
-pcm.!auc {
-        @args [ DEVICE CHANNELS ]
-        @args.DEVICE.type integer
-        @args.CHANNELS.type integer
-
-        type hw
-        card model3
-        device 0
-        subdevice $DEVICE
-        rate 48000
-        channels $CHANNELS
-}
-# AudioWeaver opens the eCall channels at 48 kHz (AWE_CmdLine.ini), but awe_tplug8 is 8 kHz:
-# "can't set sample rate requested=48000 got=8000", and AWE exits (100). Resample.
-pcm.!awe_in_ecallrx { type plug slave.pcm "awe_tplug8:ecallrx,1" }
-pcm.!awe_out_ecalltx { type plug slave.pcm "awe_tplug8:ecalltx,1" }
-# --- end mcu2-patchkit ---
-'''
-
-# AudioWeaver only (qtcar-service sets ALSA_CONFIG_PATH): on the car it runs in a minijail
-# without /dev/snd, its own opens of the sound card fail and audiod owns the PCMs. Here /dev/snd
-# is visible, AWE would take them first and audiod gets EBUSY.
-ASOUND_AWE = '''# mcu2-patchkit: AudioWeaver only (ALSA_CONFIG_PATH in qtcar-service). On the car it runs
-# without /dev/snd, so audiod (which feeds it) owns the sound card. Point it at a card that
-# isn't there.
-pcm.!auc {
-        @args [ DEVICE CHANNELS ]
-        @args.DEVICE.type integer
-        @args.CHANNELS.type integer
-        type hw
-        card 31
-}
-'''
-
-GROUPS = {
-    'core': 'binary patches needed for QtCar to run (asserts only log, as on the car)',
-    'cef': 'browser/CEF: no-sandbox shim, EGL pixmap shim, WebAudio oscillator patch, CEF symlinks',
-    'mesa': 'Mesa 18 software renderer + LLVM 6.0 and dependencies',
-    'assets': 'missing asset symlinks (Model S badge -> Model 3, roof_glass)',
-    'system': 'passwd, settings.conf, DNS, directories, icu_preload.so, /startup.sh',
-    'identity': '/var/etc/vin and /var/etc/birthday (only with --vin / --birthday)',
-    'vehicle': 'QtCarSimService without its drive-inverter module (fake vehicle data, VEHICLE=1)',
-    'audio': "asound.conf: the car's sound card on a snd-aloop card (AUDIO=1 in start_all.sh)",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -457,7 +168,7 @@ class Runner:
     # -- binary patches ------------------------------------------------------
     def binaries(self):
         self.section('Binary patches')
-        for b in BINARIES:
+        for b in P.BINARIES:
             patches = [x for x in b['patches'] if not self.skipped(x[1], x[0])]
             retired = b.get('retired', [])
             path = self.p(b['path'])
@@ -470,6 +181,7 @@ class Runner:
                 self.report('error', f"{b['path']}: unknown file version (sha1 {base_sha}), not touching it")
                 continue
             changed = False
+            writes = []
             # (id, offset, bytes found = ok, bytes to replace, what to write, label)
             todo = [(i, off, new, old, new, f"{b['path']} @0x{off:x} {i}: {d}") for i, g, off, old, new, d in patches]
             todo += [(i, off, orig, old, orig, f"{b['path']} @0x{off:x} {i} (retired, restoring the firmware's "
@@ -486,13 +198,25 @@ class Runner:
                         self.report('todo', label)
                     else:
                         data[off:off + len(good)] = good
+                        writes.append((off, good))
                         changed = True
                         self.report('done', label)
                 else:
                     self.report('error', f'{label} -- unexpected bytes {cur.hex()}')
             if changed:
                 self.backup_file(path)
-                self.write_atomic(path, bytes(data), os.stat(path).st_mode & 0o7777)
+                if b.get('in_place'):
+                    # Some firmware executables are hardlinks to one 235 MiB image. A replace
+                    # would split them into four copies and exhaust the ext4 image. Only the
+                    # exact hash/bytes checked above are changed; keep the shared inode.
+                    with open(path, 'r+b') as f:
+                        for off, blob in writes:
+                            f.seek(off)
+                            f.write(blob)
+                        f.flush()
+                        os.fsync(f.fileno())
+                else:
+                    self.write_atomic(path, bytes(data), os.stat(path).st_mode & 0o7777)
 
     @staticmethod
     def partially_patched(data, patches):
@@ -503,9 +227,9 @@ class Runner:
         return True
 
     def retired_files(self):
-        """Remove files earlier kits added that aren't needed any more (RETIRED_FILES)."""
+        """Remove files earlier kits added that aren't needed any more (P.RETIRED_FILES)."""
         self.section('Retired files')
-        for group, rel, why in RETIRED_FILES:
+        for group, rel, why in P.RETIRED_FILES:
             if self.skipped(group):
                 continue
             for f in (rel, rel + '.orig'):
@@ -522,7 +246,7 @@ class Runner:
     # -- payload -------------------------------------------------------------
     def payload(self):
         self.section('Payload files')
-        for group, rel, mode, want in PAYLOAD_FILES:
+        for group, rel, mode, want in P.PAYLOAD_FILES:
             if self.skipped(group):
                 continue
             src = os.path.join(PAYLOAD, rel)
@@ -553,7 +277,7 @@ class Runner:
 
     def symlinks(self):
         self.section('Symlinks')
-        for group, rel, target in SYMLINKS:
+        for group, rel, target in P.SYMLINKS:
             if self.skipped(group):
                 continue
             dst = self.p(rel)
@@ -585,7 +309,53 @@ class Runner:
         if self.skipped('system'):
             return
         self.section('System config')
-        # tesla user needs a real shell for `su tesla -c ...`
+        if P.TESLA_SHELL:
+            self.tesla_shell()
+
+        for rel, uid in P.DIRECTORIES:
+            d = self.p(rel)
+            if os.path.isdir(d):
+                self.report('ok', f'dir {rel}')
+            elif self.check:
+                self.report('todo', f'dir {rel}')
+            else:
+                os.makedirs(d)
+                self.report('done', f'dir {rel}')
+            if uid is not None and not self.check and os.path.isdir(d):
+                self.chown(d, uid, uid)
+
+        for rel, mode in P.DIR_MODES:
+            d = self.p(rel)
+            if not os.path.isdir(d):
+                self.report('error', f'dir {rel} not found')
+            elif os.stat(d).st_mode & 0o7777 == mode:
+                self.report('ok', f'dir {rel} mode {mode:o}')
+            elif self.check:
+                self.report('todo', f'dir {rel} mode {mode:o}')
+            else:
+                os.chmod(d, mode)
+                self.report('done', f'dir {rel} mode {mode:o}')
+
+        for rel in P.EMPTY_FILES:
+            f = self.p(rel)
+            if os.path.lexists(f):  # may be a live bind mount - never replace
+                self.report('ok', f'file {rel}')
+            elif self.check:
+                self.report('todo', f'file {rel}')
+            else:
+                open(f, 'a').close()
+                os.chmod(f, 0o644)
+                self.chown(f)
+                self.report('done', f'file {rel}')
+
+        for rel, owner in P.SETTINGS_FILES:
+            self.settings_file(rel, owner)
+        for group, rel, content, mode, *owner in P.TEXT_FILES:
+            if not self.skipped(group):
+                self.text_file(rel, content, mode, *owner)
+
+    def tesla_shell(self):
+        """The tesla user needs a real shell for `su tesla -c ...` (startup.sh)."""
         passwd = self.p('etc/passwd')
         text = open(passwd).read()
         if re.search(r'^tesla:[^\n]*:/bin/sh$', text, re.M):
@@ -600,49 +370,8 @@ class Runner:
         else:
             self.report('error', 'etc/passwd: tesla user not found')
 
-        for rel, uid in DIRECTORIES:
-            d = self.p(rel)
-            if os.path.isdir(d):
-                self.report('ok', f'dir {rel}')
-            elif self.check:
-                self.report('todo', f'dir {rel}')
-            else:
-                os.makedirs(d)
-                self.report('done', f'dir {rel}')
-            if uid is not None and not self.check and os.path.isdir(d):
-                self.chown(d, uid, uid)
-
-        for rel, mode in DIR_MODES:
-            d = self.p(rel)
-            if not os.path.isdir(d):
-                self.report('error', f'dir {rel} not found')
-            elif os.stat(d).st_mode & 0o7777 == mode:
-                self.report('ok', f'dir {rel} mode {mode:o}')
-            elif self.check:
-                self.report('todo', f'dir {rel} mode {mode:o}')
-            else:
-                os.chmod(d, mode)
-                self.report('done', f'dir {rel} mode {mode:o}')
-
-        for rel in EMPTY_FILES:
-            f = self.p(rel)
-            if os.path.lexists(f):  # may be a live bind mount - never replace
-                self.report('ok', f'file {rel}')
-            elif self.check:
-                self.report('todo', f'file {rel}')
-            else:
-                open(f, 'a').close()
-                os.chmod(f, 0o644)
-                self.chown(f)
-                self.report('done', f'file {rel}')
-
-        for rel, owner in SETTINGS_FILES:
-            self.settings_file(rel, owner)
-        for group, rel, content, mode, *owner in TEXT_FILES:
-            self.text_file(rel, content, mode, *owner)
-
     def settings_file(self, rel, owner):
-        """Make sure SETTINGS_KEYS are set in an INI file, keeping everything else in it."""
+        """Make sure P.SETTINGS_KEYS are set in an INI file, keeping everything else in it."""
         import configparser
         import io
         f = self.p(rel)
@@ -650,7 +379,7 @@ class Runner:
         conf.optionxform = str  # keep key case
         if os.path.isfile(f):
             conf.read(f)
-        missing = [(sec, k) for sec, keys in SETTINGS_KEYS.items() for k, v in keys.items()
+        missing = [(sec, k) for sec, keys in P.SETTINGS_KEYS.items() for k, v in keys.items()
                    if not conf.has_section(sec) or conf[sec].get(k) != v]
         if not missing:
             self.report('ok', rel)
@@ -658,7 +387,7 @@ class Runner:
         if self.check:
             self.report('todo', f'{rel} (set {", ".join(k for _, k in missing)})')
             return
-        for sec, keys in SETTINGS_KEYS.items():
+        for sec, keys in P.SETTINGS_KEYS.items():
             if not conf.has_section(sec):
                 conf.add_section(sec)
             conf[sec].update(keys)
@@ -676,29 +405,31 @@ class Runner:
         else:
             if rel == 'startup.sh':
                 self.backup_file(f)
-            if rel == 'sbin/sv' and os.path.isfile(f) and open(f, 'rb').read(4) == b'\x7fELF':
-                # the wrapper hands everything it doesn't handle to runit's sv
-                shutil.copy2(f, self.p('sbin/sv.runit'))
+            keep = dict({'sbin/sv': 'sbin/sv.runit'}, **P.KEEP_BINARY).get(rel)
+            if keep and os.path.isfile(f) and open(f, 'rb').read(4) == b'\x7fELF':
+                # a wrapper replaces a firmware program and hands on what it doesn't handle
+                shutil.copy2(f, self.p(keep))
             self.write_atomic(f, content.encode(), mode, owner, owner)
             self.report('done', rel)
 
     def audio(self):
-        if self.skipped('audio'):
+        if self.skipped('audio') or not P.ASOUND_BLOCK:
             return
         self.section('Audio')
         f = self.p('etc/asound.conf')
         text = open(f).read()
-        if ASOUND_BLOCK in text:
+        if P.ASOUND_BLOCK in text:
             self.report('ok', 'etc/asound.conf: sound card block')
         elif self.check:
             self.report('todo', 'etc/asound.conf: sound card block')
         else:
-            for mark in (ASOUND_MARK, ASOUND_MARK.replace('mcu2-', 'mcu3-')):
+            for mark in (P.ASOUND_MARK, P.ASOUND_MARK.replace('mcu2-', 'mcu3-')):
                 if mark in text:        # an older version of the block (or the old name): replace it
                     text = text[:text.index(mark)].rstrip('\n') + '\n'
-            self.write_atomic(f, (text.rstrip('\n') + '\n\n' + ASOUND_BLOCK).encode(), 0o644)
+            self.write_atomic(f, (text.rstrip('\n') + '\n\n' + P.ASOUND_BLOCK).encode(), 0o644)
             self.report('done', 'etc/asound.conf: sound card block')
-        self.text_file('etc/asound-awe.conf', ASOUND_AWE, 0o644)
+        if P.ASOUND_AWE:        # the Model 3's standalone AudioWeaver
+            self.text_file('etc/asound-awe.conf', P.ASOUND_AWE, 0o644)
 
     def identity(self, vin, birthday):
         if self.skipped('identity') or not (vin or birthday):
@@ -710,17 +441,8 @@ class Runner:
 
 
 # ---------------------------------------------------------------------------
-# Getting payload files: payload/ -> download (sources.toml) -> build (src/)
-
-# Files we can compile ourselves. Built with a modern gcc the result differs from the old image's
-# binary, so these skip the hash check. fake_sandbox is linked statically: a dynamic build
-# from a current host needs glibc >= 2.34, the chroot has 2.22.
-BUILDABLE = {
-    'usr/lib/icu_preload.so': ('src/icu_preload.c', ['-shared', '-fPIC', '-O2']),
-    'usr/lib/egl_pixmap_shim.so': ('src/egl_pixmap_shim.c', ['-shared', '-fPIC', '-O2']),
-    'usr/lib/cef_nosandbox.so': ('src/cef_nosandbox.c', ['-shared', '-fPIC', '-O2']),
-}
-
+# Getting payload files: payload/<profile>/ -> download (the profile's sources.toml) -> build
+# (the profile's src/)
 
 class FetchError(Exception):
     pass
@@ -729,19 +451,24 @@ class FetchError(Exception):
 def payload_ok(rel, want):
     path = os.path.join(PAYLOAD, rel)
     if not os.path.isfile(path):
-        return False
-    if rel in BUILDABLE:  # rebuild when the source changed
-        return os.path.getmtime(path) >= os.path.getmtime(os.path.join(KIT, BUILDABLE[rel][0]))
+        # kits before profiles cached in payload/<path>: take a file from there if it's the one
+        old = os.path.join(PAYLOAD_ROOT, rel)
+        if rel in P.BUILDABLE or not os.path.isfile(old) or sha1_file(old) != want:
+            return False
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        shutil.copy2(old, path)
+    if rel in P.BUILDABLE:  # rebuild when the source changed
+        return os.path.getmtime(path) >= os.path.getmtime(os.path.join(P.PROFILE_DIR, P.BUILDABLE[rel][0]))
     return sha1_file(path) == want
 
 
 def fetch_payload(rel, want):
-    """Put payload/<rel> in place: download it per sources.toml, or build it from src/."""
+    """Put payload/<profile>/<rel> in place: download it per sources.toml, or build it from src/."""
     out = os.path.join(PAYLOAD, rel)
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    if rel in BUILDABLE:
-        source, flags = BUILDABLE[rel]
-        cmd = ['gcc', *flags, '-o', out, os.path.join(KIT, source)]
+    if rel in P.BUILDABLE:
+        source, flags = P.BUILDABLE[rel]
+        cmd = ['gcc', *flags, '-o', out, os.path.join(P.PROFILE_DIR, source)]
         print(f'            building {rel}: {" ".join(cmd)}')
         try:
             subprocess.run(cmd, check=True)
@@ -753,7 +480,7 @@ def fetch_payload(rel, want):
     entry = load_sources().get(rel, {})
     url = entry.get('url', '').strip()
     if not url:
-        raise FetchError(f'not in payload/ and no url in sources.toml [\"{rel}\"]')
+        raise FetchError(f'not in payload/ and no url in {PROFILE}/sources.toml [\"{rel}\"]')
     archive = download(url, entry.get('sha256', '').strip())
     member = entry.get('member', '').strip()
     data = extract(archive, member) if member else open(archive, 'rb').read()
@@ -765,26 +492,29 @@ def fetch_payload(rel, want):
     print(f'            fetched {rel} from {url}')
 
 
-def check_glibc(path, limit=(2, 22)):
-    """The firmware has glibc 2.22: a shim built on a newer host must not need newer symbol
-    versions (e.g. __isoc23_strtol@GLIBC_2.38), or it won't load in the chroot."""
+def check_glibc(path):
+    """A shim built on the host must not need newer glibc symbol versions than the firmware's
+    (the profile's GLIBC; e.g. __isoc23_strtol@GLIBC_2.38 on 2.22), or it won't load in the chroot."""
+    if not P.GLIBC:
+        return
     try:
         out = subprocess.run(['objdump', '-T', path], capture_output=True, text=True).stdout
     except OSError:
         return      # no objdump: can't check
     newer = sorted({v for v in re.findall(r'GLIBC_(\d+\.\d+)', out)
-                    if tuple(map(int, v.split('.'))) > limit}, key=lambda v: tuple(map(int, v.split('.'))))
+                    if tuple(map(int, v.split('.'))) > P.GLIBC}, key=lambda v: tuple(map(int, v.split('.'))))
     if newer:
         os.unlink(path)
-        raise FetchError(f'{os.path.basename(path)} needs GLIBC_{newer[-1]}, the firmware has 2.22 '
+        have = '.'.join(map(str, P.GLIBC))
+        raise FetchError(f'{os.path.basename(path)} needs GLIBC_{newer[-1]}, the firmware has {have} '
                          f'(objdump -T shows which functions; see CLAUDE.md)')
 
 
 def load_sources():
-    if not os.path.exists(SOURCES):
+    path = os.path.join(P.PROFILE_DIR, 'sources.toml')
+    if not os.path.exists(path):
         return {}
-    import tomllib
-    with open(SOURCES, 'rb') as f:
+    with open(path, 'rb') as f:
         return tomllib.load(f)
 
 
@@ -880,17 +610,21 @@ def mounts_below(root):
 
 # The image remembers which kit built it (etc/mcu2-patchkit), so `./tesla check` can tell whether
 # it is up to date without reading every file. The version is a hash over everything in the kit
-# that ends up in the image: this script (which pins all payload hashes) and src/.
+# that ends up in the image: this script, the shared src/ and the profile's folder (its kit.py
+# pins all payload hashes; sources.toml only says where they come from, so it's left out). The
+# stamp also names the profile (profile=; missing in stamps before 2026-09-27: LEGACY_PROFILE).
 STAMP = 'etc/mcu2-patchkit'
 OLD_STAMP = 'etc/mcu3-patchkit'   # kits before 2026-09-25 (the unit was called MCU3 by mistake)
 
 
 def kit_version():
     h = hashlib.sha1()
-    files = [os.path.abspath(__file__)] + sorted(
-        os.path.join(KIT, 'src', f) for f in os.listdir(os.path.join(KIT, 'src')))
+    files = [os.path.abspath(__file__)] + sorted(os.path.join(SHARED_SRC, f) for f in os.listdir(SHARED_SRC))
+    for d, dirs, names in sorted(os.walk(P.PROFILE_DIR)):
+        dirs[:] = sorted(x for x in dirs if x != '__pycache__')
+        files += sorted(os.path.join(d, n) for n in names if n != 'sources.toml')
     for path in files:
-        h.update(os.path.basename(path).encode() + b'\0')
+        h.update(os.path.relpath(path, KIT).encode() + b'\0')
         with open(path, 'rb') as f:
             h.update(f.read())
     return h.hexdigest()[:12]
@@ -931,25 +665,34 @@ def describe_change(path, content):
     return f'differs: {added} lines new/changed, {len(diff) - added} removed'
 
 
+def list_profiles():
+    for name in profile_names():
+        m = profile_meta(name)
+        d = m.get('detect', {})
+        print(f"{name:22} {m.get('description', '')}")
+        print(f"{'':22} matches firmware {d.get('version')} with UI_PLATFORM={d.get('platform')}; car {d.get('car')}")
+
+
 def list_all():
+    print(f'Profile {PROFILE}: {profile_meta(PROFILE).get("description", "")}\n')
     print('Groups (use with --skip):')
-    for g, d in GROUPS.items():
+    for g, d in P.GROUPS.items():
         print(f'  {g:9} {d}')
     print('\nBinary patches (ids also usable with --skip):')
-    for b in BINARIES:
+    for b in P.BINARIES:
         print(f"  {b['path']}")
         for ident, group, off, old, new, desc in b['patches']:
             print(f'    {ident:24} [{group}] 0x{off:x}: {desc}')
         for ident, group, off, orig, old, desc in b.get('retired', []):
             print(f'    {ident:24} retired, restored where found: {desc}')
     print('\nRetired files (removed where found):')
-    for group, rel, why in RETIRED_FILES:
+    for group, rel, why in P.RETIRED_FILES:
         print(f'  [{group}] {rel}: {why}')
     print('\nPayload files:')
-    for group, rel, mode, _ in PAYLOAD_FILES:
+    for group, rel, mode, _ in P.PAYLOAD_FILES:
         print(f'  [{group}] {rel} ({oct(mode)})')
     print('\nSymlinks:')
-    for group, rel, target in SYMLINKS:
+    for group, rel, target in P.SYMLINKS:
         print(f'  [{group}] {rel} -> {target}')
 
 
@@ -959,28 +702,53 @@ def main():
     ap.add_argument('--check', action='store_true', help='only report what is applied / missing')
     ap.add_argument('--list', action='store_true', help='list all groups, patches and files')
     ap.add_argument('--skip', action='append', default=[], metavar='GROUP|ID',
-                    help='skip a group (core, cef, mesa, assets, system, identity) or a patch id; repeatable')
+                    help="skip a group (the profile's, see --list) or a patch id; repeatable")
     ap.add_argument('--no-backup', action='store_true', help='do not keep <file>.orig backups')
     ap.add_argument('--force', action='store_true', help='run even if something is mounted inside ROOT')
     ap.add_argument('-q', '--quiet', action='store_true', help="only show what isn't already ok")
-    ap.add_argument('--kit-version', action='store_true', help='print the kit version (hash) and exit')
+    ap.add_argument('--kit-version', action='store_true',
+                    help="print the kit version (hash) and exit: the profile's (--profile, or detected from ROOT; "
+                         f'without either {LEGACY_PROFILE})')
+    ap.add_argument('--profile', metavar='NAME', help='use this profile instead of detecting it (see --profiles)')
+    ap.add_argument('--profiles', action='store_true', help='list the profiles and the firmware each is for')
+    ap.add_argument('--detect', action='store_true', help="print ROOT's profile name and exit")
+    ap.add_argument('--info', action='store_true',
+                    help="print the profile's values for ./tesla (key=value; ROOT's profile or --profile) and exit")
     ap.add_argument('--vin', help='write /var/etc/vin')
     ap.add_argument('--birthday', help='write /var/etc/birthday')
     args = ap.parse_args()
 
-    if args.list:
-        list_all()
+    if args.profiles:
+        list_profiles()
         return 0
-    if args.kit_version:
-        print(kit_version())
-        return 0
-    if not args.root:
-        ap.error('ROOT is required (or use --list)')
-    root = os.path.abspath(args.root)
-    if not os.path.isfile(os.path.join(root, 'usr/tesla/UI/bin/QtCar')):
+    root = os.path.abspath(args.root) if args.root else None
+    if root and not os.path.isfile(os.path.join(root, 'usr/tesla/UI/bin/QtCar')):
         sys.exit(f'{root} does not look like the MCU rootfs (usr/tesla/UI/bin/QtCar missing)')
+    if args.detect:
+        if not root:
+            ap.error('--detect needs ROOT')
+        print(detect_profile(root))
+        return 0
+    if args.info:
+        name = args.profile or (detect_profile(root) if root else LEGACY_PROFILE)
+        m = profile_meta(name)
+        d, scr, feat = m.get('detect', {}), m.get('screen', {}), m.get('features', {})
+        print(f"profile={name}\ncar={d.get('car', '')}\ncenter={scr.get('center', '')}\n"
+              f"cluster={scr.get('cluster', '')}\nmit_shm={str(scr.get('mit_shm', True)).lower()}\n"
+              f"maps={str(feat.get('maps', False)).lower()}\nservices={' '.join(m.get('services', {}).get('base', []))}")
+        return 0
+    if args.list or args.kit_version:
+        load_profile(args.profile or (detect_profile(root) if root else LEGACY_PROFILE))
+        if args.list:
+            list_all()
+        else:
+            print(kit_version())
+        return 0
+    if not root:
+        ap.error('ROOT is required (or use --list / --profiles)')
+    load_profile(args.profile or detect_profile(root))
     for s in args.skip:
-        known = set(GROUPS) | {x[0] for b in BINARIES for x in b['patches']}
+        known = set(P.GROUPS) | {x[0] for b in P.BINARIES for x in b['patches']}
         if s not in known:
             sys.exit(f'--skip {s}: unknown group / patch id (see --list)')
 
@@ -992,7 +760,9 @@ def main():
         print('WARNING: not running as root - file ownership (root / tesla) will not be set.\n')
 
     r = Runner(root, args.check, not args.no_backup, args.skip, args.quiet)
+    version_fw, platform = firmware_id(root)
     print(f'Rootfs: {root}' + ('  (check only)' if args.check else ''))
+    print(f'Firmware {version_fw} ({platform}), profile {PROFILE}' + (' (--profile)' if args.profile else ''))
     r.binaries()
     r.retired_files()
     r.payload()
@@ -1004,6 +774,8 @@ def main():
     c = r.counts
     print(f"\nSummary: {c['ok']} already ok, {c['done']} applied, {c['todo']} todo, {c['error']} errors")
     version, stamp = kit_version(), read_stamp(root)
+    if stamp and stamp.get('profile', LEGACY_PROFILE) != PROFILE:
+        print(f"Note: the image was patched with profile {stamp.get('profile', LEGACY_PROFILE)}, this is {PROFILE}")
     if args.check:
         if not stamp:
             print('Kit version: the image has no stamp (built by a kit older than 2026-09-24)')
@@ -1015,9 +787,10 @@ def main():
         else:
             print(f"Kit version: the image has {stamp.get('kit')} ({stamp.get('commit') or '?'}, applied "
                   f"{stamp.get('date', '?')}), this kit is {version}")
-    elif not c['error'] and (c['done'] or stamp.get('kit') != version or stamp.get('skipped') != ','.join(args.skip)):
+    elif not c['error'] and (c['done'] or stamp.get('kit') != version or stamp.get('profile') != PROFILE
+                             or stamp.get('skipped') != ','.join(args.skip)):
         import datetime
-        text = (f'kit={version}\ncommit={git_describe()}\n'
+        text = (f'kit={version}\nprofile={PROFILE}\ncommit={git_describe()}\n'
                 f'date={datetime.datetime.now().isoformat(timespec="seconds")}\n'
                 f'skipped={",".join(args.skip)}\n')
         r.write_atomic(r.p(STAMP), text.encode(), 0o644)

@@ -2,12 +2,13 @@
 """Bridge a pseudo terminal (a UART with H4 framing, as the firmware's bsa_server expects) to a
 Bluetooth adapter's raw HCI user channel. The adapter must be down and unused by BlueZ.
 
-  hci-bridge.py [--dev 0] [--link PATH] [--pass-vendor] [-v]
+  hci-bridge.py [--dev 0] [--link PATH] [--pass-vendor | --emulate-vendor-success] [-v]
 
 Broadcom vendor commands (opcode 0xFCxx/0xFDxx, OGF 0x3F) are answered here with "Unknown HCI
 Command" instead of being sent on: on other controllers these opcodes mean something else, and
 an Intel AX210 hung after BSA's periodic 0xFC48 (only a USB power cycle brought it back).
---pass-vendor sends them on (for a real Broadcom/Cypress controller).
+--emulate-vendor-success acknowledges them locally for the 2026 LGIT stack, without emulating
+command-specific response data. --pass-vendor sends them on for a real Broadcom/Cypress device.
 """
 import argparse, ctypes, fcntl, os, pty, select, signal, socket, sys, termios, time, tty
 
@@ -72,7 +73,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dev", type=int, default=0)
     ap.add_argument("--link", default="/tmp/hci-bridge-tty")
-    ap.add_argument("--pass-vendor", action="store_true", help="send vendor commands to the controller")
+    vendor = ap.add_mutually_exclusive_group()
+    vendor.add_argument("--pass-vendor", action="store_true", help="send vendor commands to the controller")
+    vendor.add_argument("--emulate-vendor-success", action="store_true",
+                        help="acknowledge vendor commands locally without sending them to the controller")
     ap.add_argument("-v", action="store_true")
     a = ap.parse_args()
     s = open_user_channel(a.dev)
@@ -127,8 +131,11 @@ def main():
                 if p[0] in DROP:
                     continue
                 if p[0] == 1 and len(p) >= 3 and p[2] >> 2 == 0x3F and not a.pass_vendor:
-                    # vendor command: Command Complete, status 0x01 (Unknown HCI Command)
-                    reply = bytes([4, 0x0E, 4, 1, p[1], p[2], 0x01])
+                    # Never forward Broadcom opcodes to a different controller. The optional
+                    # acknowledgement is for probing whether the stack only needs a success
+                    # status; it cannot emulate Broadcom vendor command response payloads.
+                    reply = bytes([4, 0x0E, 4, 1, p[1], p[2],
+                                   0x00 if a.emulate_vendor_success else 0x01])
                     if a.v:
                         print(f"< {reply.hex()} (vendor command answered here)", file=sys.stderr, flush=True)
                     os.write(master, reply)

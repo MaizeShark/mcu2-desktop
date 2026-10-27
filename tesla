@@ -20,20 +20,27 @@ ${B}./tesla$R0 COMMAND [options]
   config             the settings a start would use and where each comes from
   services           the firmware services that can be started (--services / SERVICES=)
   build-image [...]  create or update the patched image (patch kit + maps); build-image --help
+  build-stick [...]  a bootable USB stick that starts QtCar (your own use only); build-stick --help
 
 Settings: tesla.conf (created from tesla.conf.example on the first start). Environment variables
 of the same names (AUDIO=1 ./tesla start) override it, command line options override both.
 EOF
 }
 
-# --config FILE, before anything reads the settings
+# --config FILE (anywhere, for every command), before anything reads the settings; taken out of
+# the arguments, so the commands don't see it
 CONFIG_ARG=""
-prev=""
-for a in "$@"; do
-    [ "$prev" = --config ] && CONFIG_ARG=$(abspath "$a" "$CALLER_PWD")
-    case "$a" in --config=*) CONFIG_ARG=$(abspath "${a#--config=}" "$CALLER_PWD") ;; esac
-    prev=$a
+args=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --config) CONFIG_ARG=$(abspath "${2:?--config needs a file}" "$CALLER_PWD"); shift ;;
+        --config=*) CONFIG_ARG=$(abspath "${1#--config=}" "$CALLER_PWD") ;;
+        --) args+=("$@"); break ;;      # the rest belongs to the command (build-image -- kit options)
+        *) args+=("$1") ;;
+    esac
+    shift
 done
+set -- "${args[@]}"
 [ -z "$CONFIG_ARG" ] || [ -f "$CONFIG_ARG" ] || die "no config file $CONFIG_ARG"
 
 cmd_stop() {
@@ -119,7 +126,8 @@ cmd_services() {
     { sed -n 's/^\([a-z0-9-]*\))$/\1/p' <<<"$vars"; printf '%s\n' valhalla qtcar-sim audioweaver audiod; } |
         sort -u | column -c 100 | sed 's/^/  /'
     say "Started by the features: nav: valhalla qtcar-tmserver; vehicle: qtcar-sim qtcar-vehicle;"
-    say "  gps: qtcar-gpsmanager; audio: audioweaver audiod qtcar-audiod qtcar-mediaserver; music: qtcar-mediaserver"
+    say "  gps: qtcar-gpsmanager; audio: Model 3: audioweaver audiod qtcar-audiod qtcar-mediaserver;"
+    say "  audio: Model S/X: qtcar-audiod qtcar-mediaserver (Chromium direct loopback); music: qtcar-mediaserver"
 }
 
 cmd=${1:-help}
@@ -148,6 +156,7 @@ case "$cmd" in
         cmd_config ;;
     services) load_config "$CONFIG_ARG"; cmd_services ;;
     build-image) load_config "$CONFIG_ARG"; . tools/build-image.sh; cmd_build_image "$@" ;;
+    build-stick) load_config "$CONFIG_ARG"; . tools/build-stick.sh; cmd_build_stick "$@" ;;
     help|-h|--help) usage ;;
     *) usage >&2; die "unknown command: $cmd" ;;
 esac

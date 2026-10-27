@@ -12,7 +12,8 @@
 # doors, lights, ...; change them on the web panel (PANEL_PORT). Option: --vehicle / --no-vehicle
 #VEHICLE=0
 
-# The car's look (needs VEHICLE=1). Options: --color, --wheels, --performance
+# The car's look (needs VEHICLE=1). Options: --color, --wheels, --performance. Model 3 names below;
+# the Model S/X has its own (./tesla --config tesla-s.conf start --help)
 #   color:       RedMulticoat SolidBlack SilverMetallic MidnightSilver DeepBlue PearlWhite
 #   wheels:      Pinwheel18 Stiletto19 Stiletto20 Stiletto20Staggered Gemini19Square Gemini19Staggered
 #   performance: Base Performance Ludicrous BasePlus
@@ -27,13 +28,18 @@
 # With VEHICLE=1 the car shifts into D, shows its speed and counts up the odometer while driving.
 #GPS=
 
+# The car's clock: a time zone like Europe/Berlin; auto = this PC's. The car looks it up online for
+# its GPS position (Google, with Tesla's key), which can't work here.
+#TIMEZONE=auto
+
 # Sound: the car's amplifier on a snd-aloop card, played on this PC (pw-play). Option: --audio
 #AUDIO=0
 # Which of the 8 amplifier channels go left / right (sox remix syntax)
 #AUDIO_REMIX="1v0.5,4v0.5,5v0.5,7v0.5 1v0.5,2v0.5,6v0.5,8v0.5"
 
 # The car's Bluetooth (Broadcom's stack from the firmware) on this PC's adapter: pairing, phone,
-# contacts, music (with AUDIO=1). BlueZ is stopped while it runs. Option: --bluetooth
+# contacts, music (with AUDIO=1). BlueZ is stopped while it runs. auto = on when BT_ADAPTER
+# exists. Option: --bluetooth
 #BLUETOOTH=0
 #BT_ADAPTER=hci0
 
@@ -42,7 +48,8 @@
 
 # Backup camera, shown in R: any V4L2 device, e.g. a phone through scrcpy --v4l2-sink=/dev/video10.
 # ffmpeg converts it into CAMERA_DEV, a second v4l2loopback device (set up once:
-# modprobe v4l2loopback devices=2 video_nr=10,32 exclusive_caps=1,1). Option: --camera DEV
+# modprobe v4l2loopback devices=2 video_nr=10,32 exclusive_caps=1,1). auto = the first webcam
+# found at the start (a UVC camera, not an IR one). Option: --camera DEV|auto
 #CAMERA=
 #CAMERA_DEV=/dev/video32
 #CAMERA_SIZE=1280x960
@@ -63,9 +70,18 @@
 # native: the X display, and the touchscreen (auto = the first one found; without one the mouse
 # works as a finger). Option: --touch-device DEV
 #NATIVE_DISPLAY=:0
+# native: the monitor for QtCar (an xrandr output name; auto = the primary one). Other monitors
+# are switched off while it runs and restored afterwards. Option: --native-output NAME
+#NATIVE_OUTPUT=auto
+# native: rotate the selected output and touchscreen while QtCar runs; restored at stop.
+# normal, left (270 degrees), right (90 degrees), inverted (180 degrees). Option: --rotate DIR
+#ROTATE=normal
 #TOUCH_DEVICE=auto
 # native: OpenGL on the GPU: auto (an Intel GPU), on, off (software). Options: --gpu, --no-gpu
 #GPU=auto
+# native: the mouse cursor: auto (hidden when a touchscreen is used, as on the car), on, off.
+# Options: --cursor, --no-cursor
+#CURSOR=auto
 
 # The UI's size (the car's screen is 1920x1200). Option: --size WxH
 #SIZE=1920x1200
@@ -87,4 +103,14 @@
 
 # The patched firmware image and where it's mounted (see ./tesla build-image)
 #IMAGE=./mcu2.ext4
+# The chroot's writes go to RAM (a device-mapper snapshot) and into the image when it stops:
+# auto = when the image is on a USB drive and dmsetup is installed (a stick stalls on the
+# services' small synchronous writes), on, off. A power loss before the stop loses that run's changes, not the image.
+# Options: --image-ram, --no-image-ram
+#IMAGE_RAM=auto
 #CHROOT=./chroot
+# The pristine firmware dump ./tesla build-image --fresh copies (never modified), and the
+# user-owned copy ./tesla build-image --sandbox updates (for ./sandbox.sh). A second firmware
+# gets its own config file with these three: ./tesla --config tesla-s.conf ...
+#DUMP=./mcu2-original
+#SANDBOX_ROOT=./sandbox/rootfs

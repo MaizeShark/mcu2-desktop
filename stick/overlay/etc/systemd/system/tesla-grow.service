@@ -1,0 +1,10 @@
+[Unit]
+Description=Grow the stick's persistence partition to the end of the stick
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/tesla-grow
+
+[Install]
+WantedBy=multi-user.target

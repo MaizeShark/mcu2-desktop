@@ -1,0 +1,15 @@
+# Kit profile: which firmware it's for (mcu2_patch.py picks the profile whose [detect] matches
+# the rootfs) and the defaults ./tesla uses for it.
+description = "Model 3 MCU2 (Intel Atom), firmware 2019.20.4.2"
+
+[detect]
+version = "2019.20.4.2"     # usr/tesla/UI/bin/customerVersion.txt (first word)
+platform = "M3"             # UI_PLATFORM in etc/RunQtCar.env
+car = "model3"              # vehicle/: CAN database, simulator, web panel
+
+[screen]
+center = "1920x1200"        # QtCar's display
+cluster = ""                # none: the Model 3 has one screen
+
+[features]
+maps = true                # navigation/install-maps.sh (Valhalla tiles, [nav] in settings.conf)

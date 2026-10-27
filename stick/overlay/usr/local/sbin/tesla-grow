@@ -1,0 +1,10 @@
+#!/bin/sh
+# The image is only as large as its contents; on a larger stick the persistence partition (the
+# last one) grows to the end at the first boot. Nothing to do on later boots.
+dev=$(blkid -L persistence) || exit 0
+disk=/dev/$(lsblk -no pkname "$dev")
+part=$(cat "/sys/class/block/${dev#/dev/}/partition")
+if growpart "$disk" "$part"; then
+    resize2fs "$dev" && echo "tesla-grow: $dev now $(lsblk -no size "$dev")"
+fi
+exit 0

@@ -1,7 +1,8 @@
 # mcu2-desktop
 
-Runs the Tesla Model 3 touchscreen UI (QtCar) of the **MCU2** on a Linux PC: the firmware runs
-in a chroot, the screen is a virtual display you see and touch over VNC. Around it: fake vehicle
+Runs the Tesla touchscreen UI (QtCar) of the **MCU2** on a Linux PC: the Model 3's (firmware
+2019.20.4.2) and the Model S/X's (2026.8.3, with its instrument cluster). The firmware runs in a
+chroot, the screen is a virtual display you see and touch over VNC. Around it: fake vehicle
 data with a web panel, GPS (fixed, driving a route, or a real receiver), sound, a folder as USB
 music stick, a backup camera from any V4L2 source, and offline navigation.
 
@@ -18,8 +19,10 @@ music stick, a backup camera from any V4L2 source, and offline navigation.
   the Ubuntu archive when you build the image, not shipped here.
 - **Not affiliated with Tesla.** This is an independent hobby project. It is not made, endorsed
   or supported by Tesla, Inc. "Tesla" and "Model 3" are trademarks of Tesla, Inc.
-- **Only firmware 2019.20.4.2 (x86_64)** was ever tested and used. The patch kit checks every
-  file it patches and refuses other versions.
+- **Only two firmwares** were ever tested and used: the Model 3's 2019.20.4.2 and the Model
+  S/X's 2026.8.3 (both x86_64). The patch kit has a profile for each, checks every file it
+  patches and refuses other versions. The Model S/X runs with `./tesla --config tesla-s.conf ...`
+  (see [docs/setup.md](docs/setup.md)).
 - **Made with an LLM.** Sessions 1 and 2 (May 2026) were done with Claude Sonnet, all later ones
   with Claude Opus 5 & 5.5 (about 6.5M tokens), guided and tested by a human. The session notes in [`notes/`](notes/)
   show how.
@@ -28,8 +31,9 @@ music stick, a backup camera from any V4L2 source, and offline navigation.
 ## Quick start
 
 ```sh
-# once (details: docs/setup.md)
+# once (details and Fedora: docs/setup.md)
 sudo apt install xvfb x11vnc x11-utils curl python3 e2fsprogs cargo krdc
+#   Fedora: sudo dnf install xorg-x11-server-Xvfb x11vnc xdpyinfo curl python3 e2fsprogs cargo krdc
 (cd tesla-touch && cargo build --release)
 sudo cp tesla-touch/99-tesla-touch.rules /etc/udev/rules.d/ && sudo udevadm control --reload
 ./tesla build-image --fresh           # your firmware dump in mcu2-original/ -> mcu2.ext4
@@ -55,7 +59,14 @@ Touch: left click / drag = finger, mouse wheel = pinch zoom, right click = long 
 | Sound: chimes, turn signals, media, volume | `--audio` |
 | Bluetooth with the car's own stack: pairing, phone, contacts, music from the phone | `--bluetooth` |
 | A folder as USB stick with music | `--music DIR` |
-| Backup camera from any V4L2 device | `--camera DEV` |
+| Backup camera from any V4L2 device, or the PC's webcam | `--camera DEV\|auto` |
+| A bootable USB stick that starts straight into QtCar (built from your own image, for your own use) | `./tesla build-stick` |
+
+The Model S/X (2026.8.3) has these too (its limits are below), plus its instrument cluster on a second
+screen, the browser (Chromium 140), streaming web apps (TuneIn plays; services with sign-in need
+Tesla's backend), Theater (YouTube, Twitch, ...), 2048/chess/backgammon and the MAME games,
+fireplace, dog and camp mode (no HAL 9000 in this firmware), charging with the cluster's figures,
+and the car's sound through its own audio mixer. Details per feature: [docs/features.md](docs/features.md).
 
 `./tesla start --help` lists all options; `tesla.conf` holds your defaults.
 
@@ -69,6 +80,7 @@ Touch: left click / drag = finger, mouse wheel = pinch zoom, right click = long 
 | [docs/how-it-works.md](docs/how-it-works.md) | architecture, patch kit, ports, run folders |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | checks, log summaries, symptoms and fixes |
 | [docs/development.md](docs/development.md) | the sudo-free sandbox, changing the kit, conventions |
+| [stick/README.md](stick/README.md) | the bootable USB stick: building, testing in qemu, using it |
 
 What needs what, at a glance: [docs/README.md](docs/README.md#what-needs-what).
 
@@ -76,10 +88,13 @@ What needs what, at a glance: [docs/README.md](docs/README.md#what-needs-what).
 
 - **Online routing doesn't work**: it needs the car's key/credentials for Tesla's servers. Only
   offline routing inside the installed map region works.
-- Streaming: TuneIn needs Tesla's media backend, Spotify's endpoint for this firmware is gone.
-  USB music and the browser work.
-- Not answered yet: seat heaters, climate requests; TPMS warnings don't trigger; the charging
-  screen shows "+0 mi" added.
+- Streaming: the 2026 Model S/X web media stack opens in QtCar; TuneIn's public catalog browses
+  and plays with `--audio`. Spotify and several other services still require a provisioned Tesla
+  backend and real account sign-in. The 2019 Model 3's streaming limits differ; see
+  [features.md](docs/features.md#model-sx-streaming-media-202683). USB music and the Web app work.
+- Model S/X: Beach Buggy Racing 2 and the other downloadable games aren't in the firmware and
+  can't be installed (Tesla's servers); `--native` is tested on X11 only (not on a Wayland desktop);
+  the bootable stick is tested in qemu only.
 - The car's 8 amplifier channels are mixed to stereo only approximately.
 - x86-64 Linux only (on a Mac: a Linux VM).
 

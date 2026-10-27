@@ -1,0 +1,32 @@
+# Kit profile: which firmware it's for (mcu2_patch.py picks the profile whose [detect] matches
+# the rootfs) and the defaults ./tesla uses for it.
+description = "Model S/X MCU2 (Intel Atom), firmware 2026.8.3"
+
+[detect]
+version = "2026.8.3"        # usr/tesla/UI/bin/customerVersion.txt (first word)
+platform = "SX"             # UI_PLATFORM in etc/RunQtCar.env
+car = "models"              # vehicle/: CAN database, web panel (no simulator in this firmware)
+
+[screen]
+center = "1200x1920"        # portrait; on the car a landscape panel rotated by X (QCSIZE)
+cluster = "1920x720"        # QtCarCluster, on the car X screen :0.1
+# the car's X has no MIT-SHM (xorg.conf.d/20-extensions.conf). Mesa's software path sends frames as
+# shared memory segments (mode 0600) of each client's user (QtCar 1111, the games, Chromium): an
+# Xvfb of another user can't attach them (black screen). Without MIT-SHM the built-in games' frames
+# came out interlaced. "root": MIT-SHM on, ./tesla start runs Xvfb as root (tools/start.sh start_xvfb)
+mit_shm = "root"
+
+[features]
+maps = true                 # the same Valhalla 2.4.3 as the Model 3: navigation/ tiles work (session 14)
+
+[services]
+# started first by ./tesla start, before the features' services: the system D-Bus (QtCar and the
+# services register there; data values go over it), QtCarStartup (the car's qtcar-startup job:
+# creates the shared memory data values, DVSM_*, that QtCar, QtCarVehicle, the cluster, ...
+# exchange: drive rail, car state, ...) and QtCarDvServer (data values for other services);
+# escalator-stub answers QtCar's requests to the car's escalator (videos, games; never the real one)
+base = ["dbus", "escalator-stub", "qtcar-startup", "qtcar-dvserver", "qtcar-spotifyserver",
+        "media-webapp-server", "dbus-session-chromium-app", "chromium-adapter",
+        "chromium-app-input", "chromium-app", "dbus-session-chromium",
+        "chromium-input", "chromium", "dbus-session-chromium-fullscreen",
+        "chromium-fullscreen-input", "chromium-fullscreen"]

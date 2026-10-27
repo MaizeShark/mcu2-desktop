@@ -1,0 +1,25 @@
+#!/bin/bash
+# The stick's X session (startx from tesla-start): ./tesla start --native, started again when it
+# ends by itself. tesla-key (Ctrl+Alt+Esc) leaves a reason in the flag file and stops it.
+cd ~/mcu2-desktop || exit 1
+flag=${XDG_RUNTIME_DIR:-/tmp}/tesla-console
+xset s off -dpms
+xsetroot -solid black
+xbindkeys -f /etc/tesla-stick/xbindkeysrc
+
+args=(--native)
+grep -qw tesla.gpu=off /proc/cmdline && args+=(--no-gpu)
+fails=0
+while [ ! -e "$flag" ]; do
+    t0=$SECONDS
+    ./tesla start "${args[@]}"
+    echo "tesla-session: ./tesla start ended ($?) after $((SECONDS - t0)) s"
+    [ -e "$flag" ] && break
+    if [ $((SECONDS - t0)) -lt 60 ]; then fails=$((fails + 1)); else fails=0; fi
+    if [ "$fails" -ge 3 ]; then
+        echo "./tesla start failed 3 times in a row (./tesla logs)" >"$flag"
+        break
+    fi
+    sleep 3
+done
+pkill -u "$(id -u)" -x xbindkeys

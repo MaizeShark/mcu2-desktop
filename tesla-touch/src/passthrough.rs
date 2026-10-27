@@ -8,6 +8,43 @@ use evdev::{AbsoluteAxisType, Device, InputEventKind, Key};
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rotation {
+    Normal,
+    Left,
+    Right,
+    Inverted,
+}
+
+impl Rotation {
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "normal" | "0" => Ok(Self::Normal),
+            "left" | "270" | "-90" => Ok(Self::Left),
+            "right" | "90" => Ok(Self::Right),
+            "inverted" | "180" => Ok(Self::Inverted),
+            _ => Err(format!("bad --rotate {value}: use normal, left, right or inverted")),
+        }
+    }
+
+    pub fn output_size(self, panel: (i32, i32)) -> (i32, i32) {
+        match self {
+            Self::Left | Self::Right => (panel.1, panel.0),
+            Self::Normal | Self::Inverted => panel,
+        }
+    }
+
+    fn to_output(self, x: f64, y: f64, panel: (i32, i32)) -> (f64, f64) {
+        let (w, h) = (panel.0 as f64, panel.1 as f64);
+        match self {
+            Self::Normal => (x, y),
+            Self::Left => (h - y, x),
+            Self::Right => (y, w - x),
+            Self::Inverted => (w - x, h - y),
+        }
+    }
+}
+
 /// Where the UI sits on the panel: panel pixels -> UI pixels.
 #[derive(Clone, Copy, Debug)]
 pub struct Letterbox {
@@ -61,7 +98,7 @@ pub fn open(path: &Path) -> Result<(Device, String), Box<dyn std::error::Error>>
 }
 
 /// Read touches from `dev` forever and send them as UI-coordinate frames.
-pub fn run(mut dev: Device, panel: (i32, i32), lb: Letterbox, tx: Sender<Event>) {
+pub fn run(mut dev: Device, panel: (i32, i32), rotation: Rotation, lb: Letterbox, tx: Sender<Event>) {
     let abs = match dev.get_abs_state() {
         Ok(a) => a,
         Err(e) => {
@@ -105,7 +142,10 @@ pub fn run(mut dev: Device, panel: (i32, i32), lb: Letterbox, tx: Sender<Event>)
                 InputEventKind::Synchronization(_) if ev.code() == 0 => {
                     let frame = slots
                         .iter()
-                        .map(|&(on, x, y)| on.then(|| lb.to_ui(ax.to_panel(x), ay.to_panel(y))))
+                        .map(|&(on, x, y)| on.then(|| {
+                            let (px, py) = rotation.to_output(ax.to_panel(x), ay.to_panel(y), panel);
+                            lb.to_ui(px, py)
+                        }))
                         .collect();
                     if tx.send(Event::Frame(frame)).is_err() {
                         return;
@@ -114,5 +154,21 @@ pub fn run(mut dev: Device, panel: (i32, i32), lb: Letterbox, tx: Sender<Event>)
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Rotation;
+
+    #[test]
+    fn physical_corners_follow_output_rotation() {
+        let panel = (1920, 1080);
+        assert_eq!(Rotation::Left.output_size(panel), (1080, 1920));
+        assert_eq!(Rotation::Left.to_output(0.0, 0.0, panel), (1080.0, 0.0));
+        assert_eq!(Rotation::Left.to_output(1920.0, 1080.0, panel), (0.0, 1920.0));
+        assert_eq!(Rotation::Right.to_output(0.0, 0.0, panel), (0.0, 1920.0));
+        assert_eq!(Rotation::Right.to_output(1920.0, 1080.0, panel), (1080.0, 0.0));
+        assert_eq!(Rotation::Inverted.to_output(0.0, 0.0, panel), (1920.0, 1080.0));
     }
 }

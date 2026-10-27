@@ -1,0 +1,7 @@
+# Keys while QtCar runs (xbindkeys, started by tesla-session)
+"tesla-key console"
+    Control+Alt + Escape
+"tesla-key restart"
+    Control+Alt + BackSpace
+"tesla-key poweroff"
+    Control+Alt + End

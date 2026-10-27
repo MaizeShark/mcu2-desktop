@@ -1,0 +1,15 @@
+#!/bin/sh
+# What the stick's console offers (shown after QtCar ends)
+flag=${XDG_RUNTIME_DIR:-/tmp}/tesla-console
+B=$(printf '\033[1m') R=$(printf '\033[0m')
+echo
+[ -s "$flag" ] && echo "QtCar stopped: $(cat "$flag")"
+cat <<EOT
+${B}Tesla MCU2 stick$R ($(hostname), $(ip -4 -br addr show scope global 2>/dev/null | awk '{printf "%s ", $3}'))
+  tesla-start                start QtCar again
+  cd ~/mcu2-desktop          ./tesla status, ./tesla logs, ./tesla check --native, nano tesla.conf
+  sudo nmtui                 network / Wi-Fi (kept on the stick)
+  sudo poweroff, sudo reboot
+While QtCar runs: Ctrl+Alt+Esc = this console, Ctrl+Alt+Backspace = restart it,
+Ctrl+Alt+End = power off.
+EOT

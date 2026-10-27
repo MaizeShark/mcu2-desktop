@@ -43,6 +43,7 @@ Usage: tesla-touch [options]
                     /dev/input/event5). It's grabbed, so the desktop doesn't see its touches.
   --panel WxH       with --from: the panel's pixel size. The UI (--size, default 1920x1200)
                     is shown scaled to fit with black bars; touches are mapped to it.
+  --rotate DIR      with --from: panel rotation (normal, left, right, inverted) [normal]
   --no-cursor       don't force a visible arrow cursor
   -v, --verbose     log every touch frame
   -h, --help
@@ -58,6 +59,7 @@ struct Args {
     verbose: bool,
     from: Option<PathBuf>,
     panel: Option<(i32, i32)>,
+    rotation: passthrough::Rotation,
 }
 
 fn parse_size(v: &str, opt: &str) -> Result<(i32, i32), String> {
@@ -77,6 +79,7 @@ fn parse_args() -> Result<Args, String> {
         verbose: false,
         from: None,
         panel: None,
+        rotation: passthrough::Rotation::Normal,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -97,6 +100,7 @@ fn parse_args() -> Result<Args, String> {
             }
             "--from" => a.from = Some(value()?.into()),
             "--panel" => a.panel = Some(parse_size(&value()?, "--panel")?),
+            "--rotate" => a.rotation = passthrough::Rotation::parse(&value()?)?,
             "--no-cursor" => a.cursor = false,
             "-v" | "--verbose" => a.verbose = true,
             "-h" | "--help" => {
@@ -163,7 +167,8 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     if let Some((dev, name)) = source {
         let panel = args.panel.unwrap_or((width, height));
-        let lb = passthrough::Letterbox::fit(width, height, panel.0, panel.1);
+        let output = args.rotation.output_size(panel);
+        let lb = passthrough::Letterbox::fit(width, height, output.0, output.1);
         let (tx, rx) = mpsc::channel();
         {
             let tx = tx.clone();
@@ -171,7 +176,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 let _ = tx.send(passthrough::Event::Quit);
             })?;
         }
-        std::thread::spawn(move || passthrough::run(dev, panel, lb, tx));
+        std::thread::spawn(move || passthrough::run(dev, panel, args.rotation, lb, tx));
         println!(
             "ready: {} ({width}x{height}) from {} \"{name}\", panel {}x{}",
             node.display(),

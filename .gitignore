@@ -17,6 +17,7 @@
 !/navigation/
 !/vehicle/
 !/bluetooth/
+!/stick/
 
 /mcu2-patchkit/downloads/
 # downloaded / built by mcu2_patch.py (sources.toml, src/); never commit the libraries
@@ -25,3 +26,5 @@ __pycache__/
 /tesla-touch/target/
 /navigation/work/
 /vehicle/work/
+# the stick image contains the firmware: never commit it
+/stick/work/
