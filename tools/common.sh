@@ -416,6 +416,18 @@ image_file() {
     fi
 }
 
+# owners_lost ROOT: prints what's wrong if a rootfs (dump or image) lost the firmware's owners: a
+# dump extracted without root belongs to one user, and then QtCar (uid 1111) can't create its
+# folders in /home/tesla (blank map: no tile cache) nor Chromium (2008) its own in /home/tesla-cef
+# (GitHub issues #1, #2). Both firmwares: usr/ is root's, home/tesla 1111's.
+owners_lost() {
+    local usr home
+    usr=$(stat -c %u "$1/usr" 2>/dev/null) home=$(stat -c %u "$1/home/tesla" 2>/dev/null)
+    [ -n "$usr" ] && [ -n "$home" ] || return 1
+    [ "$usr" = 0 ] && [ "$home" = 1111 ] && return 1
+    echo "usr/ belongs to uid $usr, home/tesla to uid $home (should be 0 and 1111)"
+}
+
 # the kit's version stamp in the image (etc/mcu3-patchkit from kits before the rename)
 kit_stamp() { image_file etc/mcu2-patchkit || image_file etc/mcu3-patchkit; }
 # profile_info ROOT KEY: a value of the kit profile for the rootfs at ROOT (mcu2_patch.py --info):

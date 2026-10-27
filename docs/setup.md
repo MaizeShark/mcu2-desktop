@@ -61,7 +61,10 @@ sudo cp tesla-touch/99-tesla-touch.rules /etc/udev/rules.d/ && sudo udevadm cont
 
 Put your firmware dump (the root filesystem, `usr/tesla/UI/bin/QtCar` inside) at
 `mcu2-original/` in the repository folder, owned by root as extracted. Never modify it; the
-image is a patched copy. (Before 2026-09-25 these were `mcu3-original/` and `mcu3-new.ext4`;
+image is a patched copy. Extract it as root (`sudo`): the firmware's files belong to several
+users (QtCar's home is uid 1111's), and a dump extracted as yourself loses them; QtCar then can't
+create its folders (blank map, browser without cache). `./tesla check` and `./tesla build-image
+--fresh` notice it. (Before 2026-09-25 these were `mcu3-original/` and `mcu3-new.ext4`;
 both are still found. To switch to the new names: `./tesla stop`, then
 `mv mcu3-original mcu2-original` and, with the image unmounted, `mv mcu3-new.ext4 mcu2.ext4`.)
 

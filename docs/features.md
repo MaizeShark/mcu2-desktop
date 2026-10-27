@@ -75,8 +75,8 @@ On when maps are installed (`--no-nav` switches it off).
 - Logs: `valhalla.log`, `qtcar-tmserver.log`.
 - Limits: **online routing doesn't work** (it needs the car's credentials / key for Tesla's
   servers), so only places inside the installed region can be routed to. Address search and
-  geocoding go to Google online and work. Traffic, superchargers availability and similar online
-  data don't load.
+  geocoding go to Google online and work, and so do the traffic layer and the Superchargers on
+  the map (Model 3, confirmed 2026-10-27).
 
 The 2026.8.3 Model S/X firmware has the same Valhalla 2.4.3, and the same tiles work (built with
 elevation since 2026-10-22: without it the S draws no route line; `navigation/README.md`): its
@@ -363,6 +363,10 @@ through the car's audio.
 - Logs: `bsa_server.log`, `btd.log`, `qtcar-bluetooth.log`, `bt-bridge.log`, `a2dpbridge.log`.
 - Limits: tested with an Intel AX210 and two Android phones. The music connection sometimes
   needs a second attempt (the car reconnects by itself). Calls are untested.
+- BSA (`bsa_server`) can terminate itself; its service loop restarts it, and `bt-watch` then
+  restarts btd, which otherwise fails every search with `cm_inquiry_start error 5` (Bluetooth
+  stays at "Searching"). Both cars; on the Model 3 (Intel adapter, 2026-10-27) a paired Pixel 7a
+  connected only after `bt-watch` restarted btd.
 - Model S/X 2026.8.3: QtCarBluetooth must run as firmware user `qtbt` to own its D-Bus names.
   Its newer LGIT/BSA stack expects Broadcom vendor setup. On the T480's Intel adapter the
   bridge acknowledges those commands locally, without sending them to Intel hardware. In an

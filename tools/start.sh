@@ -448,8 +448,7 @@ EOF
         if [ "$svc" = dbus ]; then
             for _ in $(seq 50); do sudo test -S "$CHROOT/var/run/dbus/system_bus_socket" && break; sleep 0.1; done
         fi
-        [ "$svc" = bsa_server ] && [ "$PROFILE" = 2026.8.3-models ] && [ "$BLUETOOTH" = 1 ] &&
-            start_bluetooth_watch
+        [ "$svc" = bsa_server ] && [ "$BLUETOOTH" = 1 ] && start_bluetooth_watch
     done
     sleep 1
     if [ "$PROFILE" = 2026.8.3-models ]; then
@@ -1153,10 +1152,11 @@ start_bluetooth() {
     [ "$AUDIO" = 1 ] && [ "$PROFILE" != 2026.8.3-models ] && add_service a2dpbridge
 }
 
-# The 2026 BSA server can terminate itself after a controller reset and the
+# The BSA server (both firmwares) can terminate itself after a controller reset and the
 # service loop restarts it. btd retains its old BSA connection and then returns
-# "Status is invalid" for every inquiry until it too is restarted. Watch from
-# the first BSA launch, before btd starts, so an early restart is not missed.
+# "Status is invalid" for every inquiry until it too is restarted (a Model 3 on Debian:
+# Bluetooth stayed at "Searching", GitHub issue #2). Watch from the first BSA launch,
+# before btd starts, so an early restart is not missed.
 start_bluetooth_watch() {
     ( local seen="" now btd_pid
       while :; do

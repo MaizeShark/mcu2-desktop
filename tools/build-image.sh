@@ -110,6 +110,10 @@ with_image() {
 build_fresh() {
     local orig=$DUMP new=$IMAGE.new mnt
     [ -f "$orig/usr/tesla/UI/bin/QtCar" ] || die "no firmware dump in $orig (usr/tesla/UI/bin/QtCar missing)"
+    local lost
+    lost=$(owners_lost "$orig") &&
+        die "the dump in $orig lost the firmware's file owners (extracted without root?): $lost;" \
+            "extract it again as root (sudo)"
     image_mounted >/dev/null && die "$CHROOT has an image mounted; unmount it first: sudo umount $CHROOT"
     if [ -e "$IMAGE" ]; then
         say "This builds a new image and renames the current one to $(basename "$IMAGE").old"

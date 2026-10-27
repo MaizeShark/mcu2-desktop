@@ -62,7 +62,8 @@ the host's 16-bit playback. A play/pause comparison measured RMS 0.112 versus 0.
 speaker monitor.
 
 BSA can terminate itself on the T480 Intel adapter. Its service loop restarts it, but btd keeps
-a dead BSA socket and then fails every inquiry with `Status is invalid`. The Model S/X
+a dead BSA socket and then fails every inquiry with `Status is invalid`. The launcher's (since
+2026-10-27 for the Model 3 too: its BSA did the same on a user's Debian PC, GitHub issue #2)
 `bt-watch` helper detects a changed BSA PID and restarts btd. A forced BSA restart recovered
 the phone's HFP and A2DP profiles automatically. The underlying termination remains
 unexplained and long-term connection stability and calls are untested. The bridge acknowledges

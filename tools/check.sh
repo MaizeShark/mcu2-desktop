@@ -136,6 +136,13 @@ check_image() {
         chk warn "the image was patched by another kit version ($have, $date; this kit: $kit)" \
             "update it: ./tesla build-image  (./tesla build-image --check shows what changes)"
     fi
+    if image_mounted >/dev/null && other=$(owners_lost "$CHROOT"); then
+        chk fail "the image lost the firmware's file owners: $other" \
+            "extract the firmware dump again as root (sudo), then: ./tesla build-image --fresh"
+    elif [ -d "$DUMP" ] && other=$(owners_lost "$DUMP"); then
+        chk warn "the firmware dump lost its file owners (extracted without root?): $other" \
+            "extract it again as root (sudo), then: ./tesla build-image --fresh"
+    fi
     maps=$(image_file opt/navigon/VERSION)
     if [ -n "$maps" ]; then
         [ "$NAV" = 1 ] && chk ok "maps: $maps (navigation)" || chk off "maps: $maps (navigation off: NAV=0)"
