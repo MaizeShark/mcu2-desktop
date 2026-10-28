@@ -319,6 +319,7 @@ features_on() {
     [ -n "$MUSIC" ] && f="$f music"
     [ -n "$CAMERA" ] && f="$f camera"
     [ "$(on "$BLUETOOTH")" = 1 ] && f="$f bluetooth"
+    [ "$(on "$WIFI")" = 1 ] && f="$f wifi"
     [ "$NAV" = 1 ] && f="$f nav"
     echo "${f# }"
 }

@@ -1159,6 +1159,7 @@ start_bluetooth() {
 # before btd starts, so an early restart is not missed.
 start_bluetooth_watch() {
     ( local seen="" now btd_pid
+      echo "watching bsa_server: btd gets restarted when it restarts"
       while :; do
           grep -q ' stop$' "$LOG_DIR/events.log" 2>/dev/null && break
           now=$(pidof -s bsa_server 2>/dev/null)

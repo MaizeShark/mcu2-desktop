@@ -370,7 +370,7 @@ class Summary:
         if not conf:
             return
         vals = dict(re.match(r"(\w+)=(\S*)", l).groups() for l in conf.splitlines() if re.match(r"\w+=", l))
-        on = [k.lower() for k in ("VEHICLE", "AUDIO", "BLUETOOTH") if vals.get(k) == "1"]
+        on = [k.lower() for k in ("VEHICLE", "AUDIO", "BLUETOOTH", "WIFI") if vals.get(k) == "1"]
         if vals.get("SCREEN") == "native":
             on.append("native screen")
         on += [f"{k.lower()} {vals[k]}" for k in ("GPS", "MUSIC", "CAMERA") if vals.get(k) not in (None, "", "''")]

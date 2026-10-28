@@ -43,6 +43,13 @@
 #BLUETOOTH=0
 #BT_ADAPTER=hci0
 
+# The car's Wi-Fi (wpa_supplicant, connman, QtCarConnMan from the firmware) on this PC's adapter:
+# QtCar's Wi-Fi settings connect the PC. NetworkManager lets go of the adapter while it runs (the
+# PC is offline until the car joins a network). auto = on when there is an adapter. WIFI_ADAPTER:
+# an interface name like wlp2s0; auto = the first wireless one. Options: --wifi, --no-wifi
+#WIFI=0
+#WIFI_ADAPTER=auto
+
 # A folder with music as a USB stick (Media -> USB; needs AUDIO=1 to hear it). Option: --music DIR
 #MUSIC=
 
