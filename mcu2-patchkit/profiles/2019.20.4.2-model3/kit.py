@@ -247,9 +247,10 @@ mkdir -p /sys/fs/cgroup/net_cls/tesla-cef
 mkdir -p /sys/fs/cgroup/memory/cef
 mkdir -p /var/lock
 
-# DNS (connman is not running; /etc/resolv.conf points here). Needed for map tiles.
+# DNS (connman is not running; /etc/resolv.conf points here). Needed for map tiles. ./tesla start
+# keeps it at the PC's resolvers (tools/host-dns.py, DNS in tesla.conf): only when it's missing.
 mkdir -p /var/run/connman
-echo "nameserver 8.8.8.8" > /var/run/connman/resolv.conf
+grep -qs '^nameserver' /var/run/connman/resolv.conf || echo "nameserver 8.8.8.8" > /var/run/connman/resolv.conf
 
 # Escalator (privileged helper QtCar talks to via /tmp/escalator). It sometimes exits after a
 # request it can't serve (seen: starting the dashcam daemon on QtCar's first start), and

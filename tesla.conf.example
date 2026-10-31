@@ -56,6 +56,11 @@
 # auto = on when ModemManager has a modem. Options: --cellular, --no-cellular
 #CELLULAR=0
 
+# The chroot's DNS servers. host = this PC's (its /etc/resolv.conf, followed while it runs: a
+# network that blocks other DNS servers, a VPN's own, the modem's); or addresses such as
+# DNS="1.1.1.1 9.9.9.9". With WIFI=1 the car's ConnMan takes the network's. Option: --dns
+#DNS=host
+
 # A folder with music as a USB stick (Media -> USB; needs AUDIO=1 to hear it). Option: --music DIR
 #MUSIC=
 

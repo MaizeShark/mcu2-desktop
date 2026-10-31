@@ -20,6 +20,7 @@ Features (defaults from tesla.conf):
   --wifi                 the car's Wi-Fi (wpa_supplicant, connman, QtCarConnMan) on this PC's adapter:
                          QtCar's Wi-Fi settings connect the PC (NetworkManager lets go of it)
   --cellular             $(usage_wrap "this PC's modem (ModemManager; NetworkManager connects it) as the car's LTE: while the PC is online over it, QtCar shows the cell icon, network type, bars and operator (auto: when there is a modem)")
+  --dns "SERVERS"|host   $(usage_wrap "the chroot's DNS servers, e.g. \"1.1.1.1 9.9.9.9\"; host (default): this PC's, followed while it runs (with --wifi: the network's)")
   --bluetooth            the car's Bluetooth (Broadcom stack) on this PC's adapter: phone, contacts,
                          music with --audio (BT_ADAPTER=hci0; BlueZ is stopped while it runs)
   --music DIR            DIR as a USB stick with music (Media -> USB)
@@ -75,7 +76,7 @@ parse_start_opts() {
         opt=$1
         case "$opt" in --*=*) val=${opt#*=}; opt=${opt%%=*}; set -- "$opt" "$val" "${@:2}" ;; esac
         case "$opt" in
-            --color|--wheels|--performance|--gps|--music|--camera|--services|--size|--viewer|--config|--strace|--gdb|--touch-device|--qtcar-args|--rotate)
+            --color|--wheels|--performance|--gps|--music|--camera|--services|--size|--viewer|--config|--strace|--gdb|--touch-device|--qtcar-args|--rotate|--dns)
                 [ $# -ge 2 ] || die "$opt needs a value (./tesla start --help)" ;;
         esac
         case "$opt" in
@@ -93,6 +94,7 @@ parse_start_opts() {
             --no-wifi) set_opt WIFI 0 ;;
             --cellular) set_opt CELLULAR 1 ;;
             --no-cellular) set_opt CELLULAR 0 ;;
+            --dns) set_opt DNS "$2"; shift ;;
             --no-audio) set_opt AUDIO 0 ;;
             --music) set_opt MUSIC "$2"; shift ;;
             --no-music) set_opt MUSIC "" ;;
@@ -424,6 +426,7 @@ EOF
         sudo rm -f "$CHROOT/run/chromium/policies/chromium-fullscreen/10-homepage.json"
     fi
     SERVICES=$(echo $SERVICES)
+    start_dns
     start_features
     # the profile's base services first (the S/X firmware: its system D-Bus, which QtCar and the
     # services register on)
@@ -512,6 +515,17 @@ EOF
         info "QtCar exited ($status), restarting in 2 s"
         sleep 2 & wait $!
     done
+}
+
+# The chroot's DNS: the PC's resolvers (DNS=host) or DNS's servers, kept so while it runs (the PC
+# changes networks; tools/host-dns.py). The kit's 8.8.8.8 failed on networks that only let their
+# own DNS server through. With --wifi the car's ConnMan writes it from the network it joins.
+start_dns() {
+    [ "$WIFI" = 1 ] && return 0
+    sudo python3 tools/host-dns.py "$CHROOT" ${DNS:-host} </dev/null >"$LOG_DIR/dns.log" 2>&1 &
+    add_pid $! host-dns
+    for _ in $(seq 30); do grep -q '^chroot DNS' "$LOG_DIR/dns.log" 2>/dev/null && break; sleep 0.1; done
+    info "DNS: $(sed -n 's/^chroot DNS: //p' "$LOG_DIR/dns.log" | tail -1)"
 }
 
 # before the services start: which services, the car's settings

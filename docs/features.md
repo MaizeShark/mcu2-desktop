@@ -397,10 +397,29 @@ QtCar (saved in the image, `/var/lib/connman`); the PC is then online through th
   the network's DNS servers). The car's `wifi-power` (GPIOs, PCI device removal) is a stub.
 - Limits: wpa_supplicant 2.6 (WPA2, no WPA3). The connection only exists while QtCar runs.
 - Logs: `wpa_supplicant.log`, `connman.log`, `qtcar-connman.log`.
+- DNS: connmand writes the chroot's resolv.conf (the `DNS` setting doesn't apply, see DNS).
 - Model S/X 2026.8.3: the patch kit lets ConnMan's worker continue when the car-only AppArmor
   hat is unavailable in a desktop chroot. Its broker/worker split remains active. On the T480,
   ConnMan exposed powered Wi-Fi to QtCarConnMan and discovered seven service paths while Ethernet
   kept SSH connected. No network was joined, so authentication, DHCP and DNS are unverified.
+
+## DNS
+
+`DNS=host` (default; `--dns "SERVERS"|host`): the chroot resolves names through this PC's
+resolvers. `tools/host-dns.py` (log `dns.log`) writes them into the chroot's resolv.conf (Model 3:
+`/var/run/connman/resolv.conf`, S/X: `/etc/resolv.conf`) at the start and checks every 2 s:
+when the PC changes networks (Wi-Fi, the modem, a VPN), the chroot follows. The chroot shares the
+PC's network, so systemd-resolved's `127.0.0.53` works inside it too. `DNS="1.1.1.1 9.9.9.9"`:
+those servers instead.
+- Before 2026-10-31 the kit's fixed 8.8.8.8 was used: networks that only let their own DNS
+  server through (some home routers, company networks) left QtCar without names (no map, no
+  browser) unless the PC ran a VPN. The Model 3's `/startup.sh` only writes 8.8.8.8 when the file
+  has no server (older kits wrote it at each QtCar start; the helper puts it back within 2 s).
+- Between networks (no server in the PC's resolv.conf) the last servers stay; at the start then
+  8.8.8.8. `./tesla check` shows which servers the chroot will get.
+- With `--wifi` the car's ConnMan sets the network's servers itself; the helper doesn't run.
+- glibc 2.22 (the firmware's) only reads resolv.conf when a program starts or calls res_init;
+  Qt calls it before its lookups, Chromium watches the file.
 
 ## Cellular
 
@@ -418,7 +437,12 @@ QtCar is online through it like through any other route.
   LTE, 3G, E; 5G shows as LTE, the UIs have no 5G label), `CONN_cellSignalBars` (0-5, from
   ModemManager's signal quality: 0/1 the dot, 5 all four bars), `CONN_cellOperator`, and on the
   S/X the `CONN_cellNetwork` enum (LTE, 5GNSA, ...). When the route moves to Wi-Fi or Ethernet
-  (NetworkManager prefers them), the cell values are withdrawn.
+  (NetworkManager prefers them), the cell values are withdrawn. Under a VPN (WireGuard, OpenVPN,
+  Tailscale: a `wireguard`/`tun` interface on the route) the modem counts if the main table's
+  default route, which the tunnel runs over, is the modem's; the log then says "(VPN wg0)".
+- Unplugged and plugged in again: the values are withdrawn and come back with the next cycle;
+  while the probe fails it runs every 3 s instead of 15 s. Each change of the published values
+  is logged ("cellular values: ...").
 - Model 3: through QtCar's HTTP data values (:4220), only while online over the modem. Its
   `OPTION_dataPlan` is `Full` already, so QtCar keeps internet on the cellular link.
 - Model S/X: through D-Bus like the Wi-Fi presentation (see Offline navigation). CenterDisplay

@@ -75,7 +75,8 @@ flowchart LR
   firewall), and on loopback instead of the car's internal network (192.168.90.x). They find
   each other by UDP broadcast on 127.255.255.255.
 - **The host helpers** feed what the car's hardware would: the screen and touch, CAN frames,
-  GPS, the speakers, the camera.
+  GPS, the speakers, the camera. The chroot shares the host's network; `tools/host-dns.py` keeps
+  its resolv.conf at the host's DNS servers ([features.md](features.md#dns)).
 
 ## The Model S/X (2026.8.3)
 

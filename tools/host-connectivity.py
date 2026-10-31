@@ -172,9 +172,31 @@ def known(value):
     return "" if value in (None, "--") else value
 
 
+# VPN interfaces (ip -d link: linkinfo's info_kind): WireGuard, OpenVPN/Tailscale (tun), IPsec, GRE.
+# Not ppp: modems that dial over AT commands are online on ppp0.
+TUNNEL_KINDS = {"wireguard", "tun", "tap", "xfrm", "vti", "vti6", "ipip", "gre", "gretap", "ip6tnl", "sit"}
+
+
 def default_route_interface():
     routes = run_json(["ip", "-j", "route", "get", "1.1.1.1"])
     return routes[0].get("dev") if routes else None
+
+
+def uplink():
+    """(interface the host reaches the internet over, VPN interface or None). Under a VPN the
+    route to the internet goes into its tunnel, which runs over the main table's default route
+    (wg-quick, NetworkManager, OpenVPN's def1 and Tailscale's exit node leave that in place)."""
+    interface = default_route_interface()
+    if not interface:
+        return None, None
+    kinds = {link.get("ifname"): link.get("linkinfo", {}).get("info_kind", "")
+             for link in run_json(["ip", "-d", "-j", "link", "show"]) or []}
+    if kinds.get(interface) not in TUNNEL_KINDS:
+        return interface, None
+    routes = sorted((route.get("metric", 0), route["dev"])
+                    for route in run_json(["ip", "-j", "route", "show", "default"]) or []
+                    if route.get("dev") and kinds.get(route["dev"]) not in TUNNEL_KINDS)
+    return (routes[0][1] if routes else interface), interface
 
 
 def modem_interfaces(generic):
@@ -208,8 +230,8 @@ def signal_bars(quality):
 
 
 def modem_on_route():
-    """The modem the host's default route goes through, as a dict, or None."""
-    interface = default_route_interface()
+    """The modem the host's default route goes through (also under a VPN), as a dict, or None."""
+    interface, vpn = uplink()
     if not interface:
         return None
     for path in (run_json(["mmcli", "-L", "-J"]) or {}).get("modem-list", []):
@@ -225,6 +247,7 @@ def modem_on_route():
         mode, network = network_type(generic.get("access-technologies", []))
         return {
             "interface": interface,
+            "vpn": vpn,
             "model": " ".join(filter(None, (known(generic.get("manufacturer")), known(generic.get("model"))))),
             "operator": known(threegpp.get("operator-name")) or known(threegpp.get("operator-code")),
             "mode": mode,
@@ -243,6 +266,19 @@ class Cellular:
         self.sx = sx
         self.shown = False
         self.data_plan = None
+        self.published = {}
+
+    def set_all(self, items):
+        """Set the values; the ones that change go to the log (what QtCar was told, for reports)."""
+        changed = [f"{name}={value}" for name, value in items if self.published.get(name) != value]
+        if changed:
+            print("cellular values: " + ", ".join(changed), flush=True)
+        ok = all([self.values.set(*item) for item in items])
+        if ok:
+            self.published.update(items)
+        else:
+            self.published.clear()   # told again next time
+        return ok
 
     def publish(self, modem, connected):
         values = self.values
@@ -266,7 +302,7 @@ class Cellular:
             items[:0] = [("CONN_cellNetwork", modem["network"]), ("OPTION_dataPlan", "Full")]
             items += [("LINK_wifiState", "online" if connected else "offline"),
                       ("CONN_wifiConnected", connected)]
-        ok = all([values.set(*item) for item in items])
+        ok = self.set_all(items)
         self.shown = True
         return ok
 
@@ -277,14 +313,15 @@ class Cellular:
         items = [("CONN_cellConnected", False), ("CONN_cellActive", False), ("LINK_linkState", "")]
         if self.sx and self.data_plan not in (None, "", "Full", "<invalid>"):
             items.append(("OPTION_dataPlan", self.data_plan))
-        ok = all([self.values.set(*item) for item in items])
+        ok = self.set_all(items)
         self.shown = False
         return ok
 
 
 def describe(modem):
     bars = f"{modem['bars']}/5 ({modem['quality']} %)"
-    return f"{modem['model'] or 'modem'} on {modem['interface']}: {modem['operator'] or '?'}, " \
+    vpn = f" (VPN {modem['vpn']})" if modem.get("vpn") else ""
+    return f"{modem['model'] or 'modem'} on {modem['interface']}{vpn}: {modem['operator'] or '?'}, " \
            f"{modem['mode'] or '?'}, signal {bars}"
 
 
@@ -326,7 +363,10 @@ def main():
             last_modem = modem
         probing = modem or not link_only_cellular
         detected = online() if probing else False
-        failed_probes = 0 if detected else failed_probes + 1
+        # (cycles without a probe, off the modem, don't count: a modem that comes back starts
+        # afresh instead of offline for a cycle)
+        if probing:
+            failed_probes = 0 if detected else failed_probes + 1
         # Avoid putting media to sleep after one transient failed probe. A fresh run reports
         # offline immediately; a real loss is reported after two consecutive failures.
         connected = detected or (last is True and failed_probes < 2)
@@ -353,7 +393,8 @@ def main():
             published = ok
         if args.once:
             return 0 if ok else 1
-        time.sleep(args.interval if ok else 2)
+        # offline: probe again soon (a modem that was just plugged in, a network coming up)
+        time.sleep(args.interval if ok and (connected or not probing) else min(args.interval, 3))
 
 
 if __name__ == "__main__":

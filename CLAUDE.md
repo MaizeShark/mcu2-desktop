@@ -23,7 +23,8 @@ Session 15 (2026-10-27): S charge model (cluster figures), MAME scroll wheels, U
 vehicle data in the S QtCar. Work list: `notes/model-s-parity.md`.
 Session 16 (2026-10-31, branch `cellular-modem`): `--cellular` (`CELLULAR`), the PC's modem
 (ModemManager/NetworkManager) shown as the car's LTE by `host-connectivity.py`; the stick gets
-ModemManager. Sandbox-tested with a fake mmcli, no real modem yet (`notes/session16-*.md`).
+ModemManager. Sandbox-tested with a fake mmcli; also under a VPN. `DNS=host` (`tools/host-dns.py`):
+the chroot's resolv.conf follows the PC's instead of the fixed 8.8.8.8 (`notes/session16-*.md`).
 
 Naming: the unit is the Model 3's **MCU2** (Intel Atom, Tesla's "ICE"), not the MCU3 (AMD).
 Until 2026-09-25 the project called it MCU3 (repo mcu3-desktop, `mcu3-*` folders); the session

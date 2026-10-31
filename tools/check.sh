@@ -254,6 +254,25 @@ check_features() {
         done <<<"$mlist"
     fi
 
+    # DNS: the chroot's resolvers (tools/host-dns.py)
+    local ns
+    if [ "$(on "$WIFI")" = 1 ]; then
+        chk off "DNS: the Wi-Fi network's (the car's ConnMan sets it with --wifi)"
+    elif [ "${DNS:-host}" = host ]; then
+        ns=$(awk '$1 == "nameserver" {print $2}' /etc/resolv.conf 2>/dev/null | paste -sd' ')
+        if [ -n "$ns" ]; then
+            chk ok "DNS: this PC's ($ns)"
+        else
+            chk warn "DNS: this PC has no DNS server in /etc/resolv.conf (the chroot gets 8.8.8.8 until it has one)" \
+                "connect the PC, or set servers: DNS=\"1.1.1.1 9.9.9.9\" in tesla.conf (--dns)"
+        fi
+    elif ns=$(python3 -c 'import ipaddress, sys
+print(" ".join(str(ipaddress.ip_address(a)) for a in sys.argv[1].replace(",", " ").split()))' "$DNS" 2>/dev/null) && [ -n "$ns" ]; then
+        chk ok "DNS: $ns"
+    else
+        chk fail "DNS=\"$DNS\" isn't host or a list of IP addresses" "e.g. DNS=\"1.1.1.1 9.9.9.9\", or DNS=host (this PC's)"
+    fi
+
     # MUSIC
     if [ -n "$MUSIC" ]; then
         if [ -d "$MUSIC" ]; then
