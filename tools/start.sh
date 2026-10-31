@@ -19,6 +19,7 @@ Features (defaults from tesla.conf):
   --audio                sound: Model 3 amplifier or Model S/X web media/Browser -> PC speakers
   --wifi                 the car's Wi-Fi (wpa_supplicant, connman, QtCarConnMan) on this PC's adapter:
                          QtCar's Wi-Fi settings connect the PC (NetworkManager lets go of it)
+  --cellular             $(usage_wrap "this PC's modem (ModemManager; NetworkManager connects it) as the car's LTE: while the PC is online over it, QtCar shows the cell icon, network type, bars and operator (auto: when there is a modem)")
   --bluetooth            the car's Bluetooth (Broadcom stack) on this PC's adapter: phone, contacts,
                          music with --audio (BT_ADAPTER=hci0; BlueZ is stopped while it runs)
   --music DIR            DIR as a USB stick with music (Media -> USB)
@@ -90,6 +91,8 @@ parse_start_opts() {
             --no-bluetooth) set_opt BLUETOOTH 0 ;;
             --wifi) set_opt WIFI 1 ;;
             --no-wifi) set_opt WIFI 0 ;;
+            --cellular) set_opt CELLULAR 1 ;;
+            --no-cellular) set_opt CELLULAR 0 ;;
             --no-audio) set_opt AUDIO 0 ;;
             --music) set_opt MUSIC "$2"; shift ;;
             --no-music) set_opt MUSIC "" ;;
@@ -141,6 +144,10 @@ parse_start_opts() {
         if [ -n "$(find_wifi)" ]; then WIFI=1; else WIFI=0; fi
     fi
     WIFI=$(on "$WIFI")
+    if [ "$CELLULAR" = auto ]; then
+        if [ -n "$(modems)" ]; then CELLULAR=1; else CELLULAR=0; fi
+    fi
+    CELLULAR=$(on "$CELLULAR")
     case "$ROTATE" in
         0) ROTATE=normal ;; 90) ROTATE=right ;; 180) ROTATE=inverted ;;
         270|-90) ROTATE=left ;;
@@ -268,6 +275,7 @@ print_summary() {
     if [ "$AUDIO" = 1 ]; then f="$f, audio"; else off="$off audio"; fi
     if [ "$BLUETOOTH" = 1 ]; then f="$f, bluetooth ($BT_ADAPTER)"; else off="$off bluetooth"; fi
     if [ "$WIFI" = 1 ]; then f="$f, wifi"; else off="$off wifi"; fi
+    if [ "$CELLULAR" = 1 ]; then f="$f, cellular"; else off="$off cellular"; fi
     if [ -n "$MUSIC" ]; then f="$f, music ${MUSIC/#$HOME/\~}"; else off="$off music"; fi
     if [ -n "$CAMERA" ]; then f="$f, camera $CAMERA"; else off="$off camera"; fi
     case " $SERVICES " in *" valhalla "*) f="$f, navigation" ;; *) off="$off nav" ;; esac
@@ -628,10 +636,22 @@ start_helpers() {
         # arcade and the fireplace wait for it ("Audio Initializing"). Their sound is silent.
         # The charge rate on the cluster (mi/hr) is QtCar's GUI_chargeAveragePower, which it doesn't
         # take over from QtCarVehicle here: copied.
+        # --cellular: while the PC is online over its modem, the link is presented as the car's LTE.
         local link=()
-        [ "$WIFI" = 1 ] && link=(--no-link)
+        if [ "$WIFI" = 1 ]; then
+            link=(--no-link)
+            [ "$CELLULAR" = 1 ] && link=(--cellular-only)
+        elif [ "$CELLULAR" = 1 ]; then
+            link=(--cellular)
+        fi
         [ "$VEHICLE" = 1 ] && link+=(--copy VAPI_chargeAveragePower=GUI_chargeAveragePower)
         sudo python3 tools/host-connectivity.py "$CHROOT" "${link[@]}" --set GUI_audioReady=variant:boolean:true \
+            </dev/null >"$LOG_DIR/host-connectivity.log" 2>&1 &
+        add_pid $! host-connectivity
+    elif [ "$CELLULAR" = 1 ]; then
+        # Model 3: the cellular values through QtCar's HTTP data values, only while the PC is
+        # online over its modem (otherwise QtCar keeps its own)
+        python3 tools/host-connectivity.py "$CHROOT" --http http://127.0.0.1:4220 --cellular-only \
             </dev/null >"$LOG_DIR/host-connectivity.log" 2>&1 &
         add_pid $! host-connectivity
     fi

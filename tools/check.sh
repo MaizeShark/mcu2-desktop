@@ -232,6 +232,28 @@ check_features() {
         chk "$( [ "$v" = 1 ] && echo fail || echo off)" "no Wi-Fi adapter${wdev:+ $wdev} (wifi)" "WIFI_ADAPTER=NAME in tesla.conf"
     fi
 
+    # CELLULAR: ModemManager's modems (NetworkManager connects them; QtCar only shows the link)
+    v=$(on "$CELLULAR")
+    [ "$CELLULAR" = auto ] && v=auto    # on when there is a modem: nothing to complain about
+    local mlist
+    if ! mlist=$(modems); then
+        if [ "$v" = 1 ]; then
+            chk fail "ModemManager isn't running (cellular)" "install and start it: sudo dnf/apt install ModemManager; sudo systemctl enable --now ModemManager"
+        else
+            chk off "no ModemManager (cellular)"
+        fi
+    elif [ -z "$mlist" ]; then
+        if [ "$v" = 1 ]; then
+            chk warn "ModemManager runs, no modem found (cellular)" "plug the modem in; usb-modeswitch switches most USB sticks into modem mode"
+        else
+            chk off "ModemManager runs, no modem found (cellular)"
+        fi
+    else
+        while IFS= read -r m; do
+            chk "$( [ "$v" = 0 ] && echo off || echo ok)" "modem $m$( [ "$v" = 0 ] && echo ' (cellular off: --cellular)')"
+        done <<<"$mlist"
+    fi
+
     # MUSIC
     if [ -n "$MUSIC" ]; then
         if [ -d "$MUSIC" ]; then
@@ -320,6 +342,7 @@ features_on() {
     [ -n "$CAMERA" ] && f="$f camera"
     [ "$(on "$BLUETOOTH")" = 1 ] && f="$f bluetooth"
     [ "$(on "$WIFI")" = 1 ] && f="$f wifi"
+    { [ "$CELLULAR" = 1 ] || { [ "$CELLULAR" = auto ] && [ -n "$(modems)" ]; }; } && f="$f cellular"
     [ "$NAV" = 1 ] && f="$f nav"
     echo "${f# }"
 }

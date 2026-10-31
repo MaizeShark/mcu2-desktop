@@ -58,6 +58,7 @@ Touch: left click / drag = finger, mouse wheel = pinch zoom, right click = long 
 | GPS: a position, a route to drive, or a real receiver | `--gps` |
 | Sound: chimes, turn signals, media, volume | `--audio` |
 | Bluetooth with the car's own stack: pairing, phone, contacts, music from the phone | `--bluetooth` |
+| The PC's cellular modem as the car's LTE: cell icon, LTE/3G, bars, operator (sandbox-tested, no real modem yet) | `--cellular` |
 | A folder as USB stick with music | `--music DIR` |
 | Backup camera from any V4L2 device, or the PC's webcam | `--camera DEV\|auto` |
 | A bootable USB stick that starts straight into QtCar (built from your own image, for your own use) | `./tesla build-stick` |

@@ -32,6 +32,7 @@ everything was found out.
 | GPS | `--gps` | python3; receiver: read access (group `dialout`) | – | `qtcar-gpsmanager` | `tesla-gps.py` | `gps.log`, `qtcar-gpsmanager.log` |
 | Sound | `--audio` | `snd-aloop`, `arecord`, `pw-play` (PipeWire) or `pacat`/`aplay`; Model 3 also needs `sox`; `tools/99-tesla-sound.rules` | Model 3: kit group `audio` | Model 3: `audioweaver`, `audiod`, `qtcar-audiod`, `qtcar-mediaserver`; Model S/X: `qtcar-audiod`, `qtcar-mediaserver` | audio pipeline, speech-state keeper | `audio.log`, `qtcar-audiod.log`; Model 3: `audiod.log`, `audioweaver.log` |
 | Bluetooth | `--bluetooth` | a Bluetooth adapter (BlueZ stopped while it runs) | – | `dbus`, `bsa_server`, `btd`, `qtcar-bluetooth`, `a2dpbridge` (with audio) | `bluetooth/hci-bridge.py` | `bsa_server.log`, `btd.log`, `qtcar-bluetooth.log`, `bt-bridge.log` |
+| Cellular | `--cellular` or `auto` | ModemManager with a modem, NetworkManager connecting it (Fedora: `NetworkManager-wwan`) | – | – | `host-connectivity.py --cellular` (Model 3: `--http`, no sudo) | `host-connectivity.log` |
 | USB music | `--music DIR` | a folder with music | `[usb] media_path` (`system`) | `qtcar-mediaserver` | – | `qtcar-mediaserver.log` |
 | Backup camera | `--camera DEV` or `auto` | `ffmpeg`, `v4l2loopback` with a second device (`/dev/video32`) | `[bkcam]` (set at start) | – | ffmpeg | `camera.log` |
 

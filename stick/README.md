@@ -25,17 +25,23 @@ sudo dd if=stick/work/mcu2-stick.img of=/dev/sdX bs=4M conv=fsync status=progres
 - The console (`tesla-help`): `tesla-start` starts QtCar again, `sudo nmtui` sets up Wi-Fi,
   `./tesla status|logs|check --native` work as on a PC.
 - `tesla.conf` on the stick: the build's settings (default: your tesla.conf's features and car)
-  plus `CAMERA=auto` (the first webcam), `BLUETOOTH=auto` and `WIFI=auto` (on when the adapter
-  exists), resolved at each start. With Wi-Fi the car's own stack has the adapter while QtCar
+  plus `CAMERA=auto` (the first webcam), `BLUETOOTH=auto`, `WIFI=auto` and `CELLULAR=auto` (on
+  when the adapter or modem exists), resolved at each start. With Wi-Fi the car's own stack has the adapter while QtCar
   runs: networks are joined in QtCar's Wi-Fi settings (saved in the image); on the console
   (Ctrl+Alt+Esc) NetworkManager has it again (`sudo nmtui`).
+- Cellular: ModemManager runs, and NetworkManager's `cellular` connection (in
+  `/usr/lib/NetworkManager/system-connections`) dials any modem it finds, with the APN from
+  mobile-broadband-provider-info for the SIM's network (`gsm.auto-config`). Wi-Fi and Ethernet
+  win while they are up (route metrics). `CELLULAR=auto`: while the stick is online over the modem
+  QtCar shows the car's LTE icon, bars and operator. An APN or SIM PIN of your own:
+  `sudo nmcli connection modify cellular gsm.apn APN gsm.pin PIN` (kept on the stick).
 - `--ssh`: an ssh server (key login only, as `mcu`) and mDNS (`ssh mcu@tesla-mcu2.local`).
 
 ## Layout
 | Partition | Contents |
 |---|---|
 | 1: EFI (FAT, label `TESLABOOT`) | GRUB (`EFI/BOOT/BOOTX64.EFI`; with `--secure-boot` shim + Debian's signed GRUB), `boot/grub/grub.cfg`, `live/` (kernel, initrd, `filesystem.squashfs`) |
-| 2: ext4, label `persistence` | live-boot persistence (`persistence.conf`): `/home` (`~/mcu2-desktop` with the image, tesla.conf and logs; `~/Music`), `/var/lib/bluetooth`, NetworkManager's connections |
+| 2: ext4, label `persistence` | live-boot persistence (`persistence.conf`): `/home` (`~/mcu2-desktop` with the image, tesla.conf and logs; `~/Music`), `/var/lib/bluetooth`, NetworkManager's connections (changes to `cellular` too) |
 
 Everything else runs from the squashfs with a RAM overlay (changes outside those folders are gone
 after a reboot). QtCar's own settings, paired phones (BSA's) etc. live in the image, which sits

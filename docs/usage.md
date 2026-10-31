@@ -105,6 +105,7 @@ file: one per image/firmware, with `IMAGE`, `DUMP` and `SANDBOX_ROOT`.
 | | `AUDIO_REMIX=...` | which amplifier channels go left/right (`sox remix` syntax; Model S/X: 16 channels, amp M then amp S) |
 | `--bluetooth` / `--no-bluetooth` | `BLUETOOTH=0`, `BT_ADAPTER=hci0` | the car's Bluetooth on this PC's adapter (BlueZ is stopped while it runs); `BLUETOOTH=auto`: on when the adapter exists |
 | `--wifi` / `--no-wifi` | `WIFI=0`, `WIFI_ADAPTER=auto` | the car's Wi-Fi (wpa_supplicant, connman, QtCarConnMan) on this PC's adapter: QtCar's Wi-Fi settings connect the PC; NetworkManager lets go of the adapter while it runs; `auto`: when there's an adapter (the stick) |
+| `--cellular` / `--no-cellular` | `CELLULAR=0` | this PC's modem (ModemManager + NetworkManager connect it) as the car's LTE: while the PC is online over it, the cell icon, network type, bars and operator; `auto`: when there is a modem (the stick); see [features.md](features.md#cellular) |
 | `--music DIR` / `--no-music` | `MUSIC=` | a folder as USB stick |
 | `--camera DEV` / `--no-camera` | `CAMERA=` | backup camera source; `auto`: the first webcam (UVC, not an IR camera), decided at each start |
 | | `CAMERA_DEV=/dev/video32`, `CAMERA_SIZE=1280x960` | the device QtCar reads, the picture size |

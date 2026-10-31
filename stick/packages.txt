@@ -72,6 +72,15 @@ linux-headers-amd64
 v4l2loopback-dkms
 bluez
 rfkill
+# cellular modems (CELLULAR=auto): ModemManager (QMI, MBIM, AT; the proxies share the device),
+# PPP for modems that dial over AT commands, sticks that start as a CD drive, the APN database
+# for NetworkManager's "cellular" connection (gsm.auto-config)
+modemmanager
+libqmi-proxy
+libmbim-proxy
+ppp
+usb-modeswitch
+mobile-broadband-provider-info
 
 # firmware for common laptops/PCs: Intel/AMD graphics, Wi-Fi/Bluetooth, sound, microcode
 firmware-misc-nonfree

@@ -22,6 +22,7 @@ earlier ones where they disagree. Up to session 7 they call the unit "MCU3" and 
 | `session13-2026-10-21.md` | Fedora 44 (x11vnc under Wayland, pw-play --raw, Xvfb survives Ctrl+C); both firmwares tested there |
 | `session14-2026-10-21.md` | Model S/X parity audit; QtCar `--emulated` (no panel loop), the escalator stub (videos, MAME), S offline navigation, clean Chromium stop |
 | `session15-2026-10-27.md` | Model S/X charging (charger/BMS signals, the cluster's rate), MAME scroll wheels, USB music at /mnt/media, wiper heater; sandbox.sh and tesla-can.py fixes |
+| `session16-2026-10-31.md` | A cellular modem: the car's oFono/Telit stack, what the status bar reads, the host's ModemManager as the car's LTE (`--cellular`), the stick's modem packages; sandbox SELinux fix |
 | `model-s-parity.md` | the Model S/X parity list (verified / untested / missing), the agreed order and its progress |
 | `ideas.md` | ideas that aren't planned yet (a real HW2.5 Autopilot computer on the PC's Ethernet) |
 | `next-session-prompt.md` | the prompt for the next session |

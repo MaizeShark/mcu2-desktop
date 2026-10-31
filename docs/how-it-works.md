@@ -93,7 +93,9 @@ The same pieces, with these differences (profile `mcu2-patchkit/profiles/2026.8.
   Ethernet stream itself (UDP :20101, 4-byte ids) and answers the UI's requests (UDP :20100), with
   its own presets and panel controls for this car (`vehicle/README.md`). Some values QtCar would get
   from hardware that isn't there (internet link, audio ready, the charge power) are set over D-Bus
-  by `tools/host-connectivity.py`.
+  by `tools/host-connectivity.py`. With `--cellular` it also presents the PC's modem
+  (ModemManager) as the car's LTE, on the Model 3 through QtCar's :4220
+  ([features.md](features.md#cellular)).
 - **Sound:** the firmware's audiod has AudioWeaver built in; it plays the car's two amplifiers
   (16 channels) into the `model3` loopback card, the host mixes them to stereo. The web media,
   Browser, games and Bluetooth reach it through the `virtual` loopback card and the bridges audiod

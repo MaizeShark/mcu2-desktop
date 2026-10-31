@@ -28,6 +28,7 @@ sudo apt install alsa-utils sox pipewire-bin # --audio
 sudo apt install ffmpeg v4l2loopback-dkms    # --camera
 sudo apt install x11-xserver-utils xauth     # --native
 sudo apt install podman                      # map tiles, the USB stick
+sudo apt install modemmanager mobile-broadband-provider-info   # --cellular (a modem)
 pip install --user unicorn pyelftools        # --vehicle (extracts the CAN database once)
 ```
 
@@ -40,6 +41,7 @@ sudo dnf install alsa-utils sox pipewire-utils kernel-modules-extra   # --audio 
 sudo dnf install ffmpeg-free akmod-v4l2loopback   # --camera (v4l2loopback: RPM Fusion)
 sudo dnf install xrandr xorg-x11-xauth       # --native
 sudo dnf install podman                      # map tiles, the USB stick
+sudo dnf install ModemManager NetworkManager-wwan mobile-broadband-provider-info   # --cellular
 pip install --user unicorn pyelftools        # --vehicle (extracts the CAN database once)
 ```
 

@@ -402,6 +402,43 @@ QtCar (saved in the image, `/var/lib/connman`); the PC is then online through th
   ConnMan exposed powered Wi-Fi to QtCarConnMan and discovered seven service paths while Ethernet
   kept SSH connected. No network was joined, so authentication, DHCP and DNS are unverified.
 
+## Cellular
+
+`--cellular` (`CELLULAR=0`; `auto`: on when ModemManager has a modem, the stick's default): this
+PC's cellular modem appears as the car's LTE. The host connects it, not the firmware:
+ModemManager (QMI, MBIM, AT/PPP modems) and NetworkManager, e.g.
+`nmcli connection add type gsm ifname '*' con-name cellular gsm.auto-config yes` (the APN from
+mobile-broadband-provider-info; or `gsm.apn APN`). The chroot shares the host's network, so
+QtCar is online through it like through any other route.
+- While the host's default route goes through a modem's interface (its net port, or the
+  connected bearer's, e.g. `wwan0` or `ppp0`), `tools/host-connectivity.py --cellular` reads the
+  modem with `mmcli` every 15 s and publishes what the car's QtCarConnMan publishes from its own
+  modem: `LINK_linkState=cellular` (the status bar's cell icon instead of Wi-Fi),
+  `CONN_cellConnected` (without it the icon is crossed out), `CONN_cellSystemMode` (the label:
+  LTE, 3G, E; 5G shows as LTE, the UIs have no 5G label), `CONN_cellSignalBars` (0-5, from
+  ModemManager's signal quality: 0/1 the dot, 5 all four bars), `CONN_cellOperator`, and on the
+  S/X the `CONN_cellNetwork` enum (LTE, 5GNSA, ...). When the route moves to Wi-Fi or Ethernet
+  (NetworkManager prefers them), the cell values are withdrawn.
+- Model 3: through QtCar's HTTP data values (:4220), only while online over the modem. Its
+  `OPTION_dataPlan` is `Full` already, so QtCar keeps internet on the cellular link.
+- Model S/X: through D-Bus like the Wi-Fi presentation (see Offline navigation). CenterDisplay
+  gives a cellular link internet only with the car's data plan (Premium Connectivity,
+  `OPTION_dataPlan`, `None` here): the bridge sets it to `Full` (QtCar keeps it in
+  QtCarSettings.db) and back to the previous value when the modem goes. MediaV2 and
+  ChromiumAdapter only look at the Wi-Fi values, so `LINK_wifiState` and `CONN_wifiConnected`
+  stay online too; the status bar shows the cell icon.
+- With `--wifi` the car's ConnMan owns the link values; cellular values are then only published
+  while the PC is online over the modem (`--cellular-only`). That combination is untested.
+- `./tesla check` lists the modems (`mmcli`). Log: `host-connectivity.log` ("host online over a
+  modem: Quectel EM12-G on wwan0: Telekom.de, LTE, signal 4/5 (72 %)").
+- Tested (2026-10-31) in the sandbox for both firmwares with a simulated ModemManager (fake
+  `mmcli`/`ip`): icon, LTE/3G label, bars, operator, back to Wi-Fi or "no service". Not yet
+  with a real modem.
+- Why not the car's own stack: the firmware's oFono (1.17) talks to the car's Telit LE940B6 (S/X
+  also a Quectel AG525R-GL) over Ethernet (AT commands on 192.168.90.60:50950, data on VLAN 20),
+  not USB; its stock USB plugins have no QMI or MBIM, and QtCarConnMan only reads the modem
+  `/tesla` with Tesla's `org.ofono.Tesla.Diagnostics` interface.
+
 ## USB music
 
 `--music DIR` (`MUSIC=`): a folder shows up as a USB stick (Media -> USB) and plays with

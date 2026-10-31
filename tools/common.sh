@@ -53,7 +53,7 @@ pkg_install() {
 # defaults < tesla.conf < environment < command line. CONF_SRC[var] says where a value came from.
 CONF_VARS=(VEHICLE VEHICLE_COLOR VEHICLE_WHEELS VEHICLE_PERFORMANCE GPS AUDIO AUDIO_REMIX MUSIC
            CAMERA CAMERA_DEV CAMERA_SIZE NAV SERVICES SIZE VIEWER REMOTE VNC_PORT PANEL_PORT RESTART
-           IMAGE IMAGE_RAM CHROOT DUMP SANDBOX_ROOT SCREEN NATIVE_DISPLAY NATIVE_OUTPUT ROTATE TOUCH_DEVICE QTCAR_ARGS GPU CURSOR BLUETOOTH BT_ADAPTER WIFI WIFI_ADAPTER TIMEZONE)
+           IMAGE IMAGE_RAM CHROOT DUMP SANDBOX_ROOT SCREEN NATIVE_DISPLAY NATIVE_OUTPUT ROTATE TOUCH_DEVICE QTCAR_ARGS GPU CURSOR BLUETOOTH BT_ADAPTER WIFI WIFI_ADAPTER CELLULAR TIMEZONE)
 PATH_VARS=" MUSIC IMAGE CHROOT DUMP SANDBOX_ROOT "    # relative paths: to the caller's directory (env, command line)
 declare -A CONF_SRC
 
@@ -64,7 +64,7 @@ set_defaults() {
     SIZE=1920x1200 VIEWER="" REMOTE=0 VNC_PORT=5900 PANEL_PORT=8099 RESTART=1
     IMAGE=./mcu2.ext4 IMAGE_RAM=auto CHROOT=./chroot DUMP=./mcu2-original SANDBOX_ROOT=./sandbox/rootfs
     SCREEN=vnc NATIVE_DISPLAY=:0 NATIVE_OUTPUT=auto ROTATE=normal TOUCH_DEVICE=auto QTCAR_ARGS="" GPU=auto CURSOR=auto BLUETOOTH=0 BT_ADAPTER=hci0
-    WIFI=0 WIFI_ADAPTER=auto TIMEZONE=auto
+    WIFI=0 WIFI_ADAPTER=auto CELLULAR=0 TIMEZONE=auto
 }
 
 # abspath <path> <base dir>: ~ and relative paths resolved against the base dir
@@ -566,6 +566,20 @@ find_camera() {
 find_wifi() {
     local d
     for d in /sys/class/net/*/wireless; do [ -d "$d" ] && { d=${d%/wireless}; echo "${d##*/}"; return; }; done
+}
+
+# modems: ModemManager's modems, one per line ("Quectel EM12-G (connected)"); fails when
+# ModemManager isn't running. CELLULAR=auto: on when there is one
+modems() {
+    command -v mmcli >/dev/null || return 1
+    local list path
+    list=$(mmcli -L -J 2>/dev/null) || return 1
+    for path in $(echo "$list" | python3 -c 'import json,sys; print(*json.load(sys.stdin).get("modem-list", []))'); do
+        mmcli -m "$path" -J 2>/dev/null | python3 -c 'import json,sys
+g = json.load(sys.stdin)["modem"]["generic"]
+print(" ".join(v for v in (g.get("manufacturer"), g.get("model")) if v not in (None, "--")) or "modem",
+      "(" + g.get("state", "?") + ")")'
+    done
 }
 
 # restore_wifi NAME NM_DEVICE: after --wifi: wlan0 gets its name back (without connmand's

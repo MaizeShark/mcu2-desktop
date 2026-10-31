@@ -21,6 +21,9 @@ escalator, S offline navigation, Chromium stops cleanly.
 Session 15 (2026-10-27): S charge model (cluster figures), MAME scroll wheels, USB music
 (/mnt/media/usb-*), wiper heater; the sandbox needs `dbus qtcar-dvserver qtcar-vehicle` for
 vehicle data in the S QtCar. Work list: `notes/model-s-parity.md`.
+Session 16 (2026-10-31, branch `cellular-modem`): `--cellular` (`CELLULAR`), the PC's modem
+(ModemManager/NetworkManager) shown as the car's LTE by `host-connectivity.py`; the stick gets
+ModemManager. Sandbox-tested with a fake mmcli, no real modem yet (`notes/session16-*.md`).
 
 Naming: the unit is the Model 3's **MCU2** (Intel Atom, Tesla's "ICE"), not the MCU3 (AMD).
 Until 2026-09-25 the project called it MCU3 (repo mcu3-desktop, `mcu3-*` folders); the session

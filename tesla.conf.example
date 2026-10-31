@@ -50,6 +50,12 @@
 #WIFI=0
 #WIFI_ADAPTER=auto
 
+# This PC's cellular modem as the car's LTE. ModemManager and NetworkManager connect it (e.g.
+# nmcli connection add type gsm ifname '*' con-name cellular gsm.auto-config yes); while the PC
+# is online over it, QtCar shows the cell icon with the network type, bars and operator.
+# auto = on when ModemManager has a modem. Options: --cellular, --no-cellular
+#CELLULAR=0
+
 # A folder with music as a USB stick (Media -> USB; needs AUDIO=1 to hear it). Option: --music DIR
 #MUSIC=
 

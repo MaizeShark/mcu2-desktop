@@ -1,0 +1,21 @@
+# The stick's cellular modem (./tesla CELLULAR=auto shows it in QtCar as the car's LTE).
+# The APN comes from mobile-broadband-provider-info for the network the SIM registers on.
+# Changes (saved under /etc/NetworkManager/system-connections, kept on the stick):
+#   sudo nmcli connection modify cellular gsm.apn APN    an APN of your own
+#   sudo nmcli connection modify cellular gsm.pin PIN    a SIM with a PIN
+# Wi-Fi and Ethernet are preferred while they are up (lower route metrics).
+[connection]
+id=cellular
+uuid=5d2c7e4a-6b1f-4e8c-9a53-2f0d8b1c7e61
+type=gsm
+autoconnect=true
+
+[gsm]
+auto-config=true
+
+[ipv4]
+method=auto
+
+[ipv6]
+addr-gen-mode=default
+method=auto
