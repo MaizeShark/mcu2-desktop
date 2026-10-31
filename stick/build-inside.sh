@@ -136,9 +136,24 @@ menuentry "UEFI firmware settings" {
     fwsetup
 }
 EOF
-# finds this partition by its label and reads the menu above
+# finds this partition and reads the menu above
 cat >/build/find.cfg <<'EOF'
-search --no-floppy --set=root --label TESLABOOT
+# the device GRUB was loaded from first (the label isn't found on every firmware), then the label,
+# then any partition with the menu on it
+set found=0
+if [ -n "$cmdpath" ]; then
+    regexp --set=1:dev '^(\([^)]*\))' "$cmdpath"
+    if [ -n "$dev" -a -f "$dev/boot/grub/grub.cfg" ]; then
+        set root="$dev"; set found=1
+    fi
+fi
+if [ "$found" = 0 ]; then
+    search --no-floppy --set=root --label TESLABOOT
+    if [ -f ($root)/boot/grub/grub.cfg ]; then set found=1; fi
+fi
+if [ "$found" = 0 ]; then
+    search --no-floppy --set=root --file /boot/grub/grub.cfg
+fi
 set prefix=($root)/boot/grub
 configfile ($root)/boot/grub/grub.cfg
 EOF
@@ -153,7 +168,7 @@ if [ "$SECURE_BOOT" = 1 ]; then
     cp /build/find.cfg "$ESP/EFI/BOOT/grub.cfg"
 else
     grub-mkstandalone -O x86_64-efi -o "$ESP/EFI/BOOT/BOOTX64.EFI" \
-        --modules="part_gpt part_msdos fat ext2 search search_label configfile normal linux echo test all_video efi_gop efi_uga gfxterm" \
+        --modules="part_gpt part_msdos fat ext2 search search_label search_fs_file regexp configfile normal linux echo test all_video efi_gop efi_uga gfxterm" \
         --locales="" --fonts="" --themes="" "boot/grub/grub.cfg=/build/find.cfg"
 fi
 cat >"$ESP/TESLA-STICK.txt" <<EOF
