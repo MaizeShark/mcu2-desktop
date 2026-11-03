@@ -9,6 +9,8 @@ ${B}Tesla MCU2 stick$R ($(hostname), $(ip -4 -br addr show scope global 2>/dev/n
   tesla-start                start QtCar again
   cd ~/mcu2-desktop          ./tesla status, ./tesla logs, ./tesla check --native, nano tesla.conf
   sudo nmtui                 network / Wi-Fi (kept on the stick)
+  mmcli -m any               the cellular modem; its APN / SIM PIN:
+                             sudo nmcli connection modify cellular gsm.apn APN (gsm.pin PIN)
   sudo poweroff, sudo reboot
 While QtCar runs: Ctrl+Alt+Esc = this console, Ctrl+Alt+Backspace = restart it,
 Ctrl+Alt+End = power off.

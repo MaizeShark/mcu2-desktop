@@ -19,14 +19,18 @@ Features (defaults from tesla.conf):
   --audio                sound: Model 3 amplifier or Model S/X web media/Browser -> PC speakers
   --wifi                 the car's Wi-Fi (wpa_supplicant, connman, QtCarConnMan) on this PC's adapter:
                          QtCar's Wi-Fi settings connect the PC (NetworkManager lets go of it)
+  --cellular             $(usage_wrap "this PC's modem (ModemManager; NetworkManager connects it) as the car's LTE: while the PC is online over it, QtCar shows the cell icon, network type, bars and operator (auto: when there is a modem)")
+  --dns "SERVERS"|host   $(usage_wrap "the chroot's DNS servers, e.g. \"1.1.1.1 9.9.9.9\"; host (default): this PC's, followed while it runs (with --wifi: the network's while QtCar is on one)")
   --bluetooth            the car's Bluetooth (Broadcom stack) on this PC's adapter: phone, contacts,
                          music with --audio (BT_ADAPTER=hci0; BlueZ is stopped while it runs)
   --music DIR            DIR as a USB stick with music (Media -> USB)
   --camera DEV           backup camera from a V4L2 device (e.g. scrcpy --v4l2-sink=/dev/video10;
                          auto: the first webcam)
   --no-nav               no offline navigation (on when maps are installed)
+  --mitm-cert FILE       $(usage_wrap "trust this CA certificate during the run, an intercepting proxy's (mitmproxy: ~/.mitmproxy/mitmproxy-ca-cert.pem); the image isn't changed (docs/mitm.md)")
   --services "A B"       more firmware services (./tesla services lists them)
-  --no-vehicle, --no-gps, --no-audio, --no-music, --no-camera   switch off what tesla.conf enables
+  --no-vehicle, --no-gps, --no-audio, --no-music, --no-camera, --no-mitm-cert
+                         switch off what tesla.conf enables
 
 Screen and access:
   --native               QtCar on this PC's own screen instead of a virtual one over VNC:
@@ -74,7 +78,7 @@ parse_start_opts() {
         opt=$1
         case "$opt" in --*=*) val=${opt#*=}; opt=${opt%%=*}; set -- "$opt" "$val" "${@:2}" ;; esac
         case "$opt" in
-            --color|--wheels|--performance|--gps|--music|--camera|--services|--size|--viewer|--config|--strace|--gdb|--touch-device|--qtcar-args|--rotate)
+            --color|--wheels|--performance|--gps|--music|--camera|--services|--size|--viewer|--config|--strace|--gdb|--touch-device|--qtcar-args|--rotate|--dns|--mitm-cert)
                 [ $# -ge 2 ] || die "$opt needs a value (./tesla start --help)" ;;
         esac
         case "$opt" in
@@ -90,11 +94,16 @@ parse_start_opts() {
             --no-bluetooth) set_opt BLUETOOTH 0 ;;
             --wifi) set_opt WIFI 1 ;;
             --no-wifi) set_opt WIFI 0 ;;
+            --cellular) set_opt CELLULAR 1 ;;
+            --no-cellular) set_opt CELLULAR 0 ;;
+            --dns) set_opt DNS "$2"; shift ;;
             --no-audio) set_opt AUDIO 0 ;;
             --music) set_opt MUSIC "$2"; shift ;;
             --no-music) set_opt MUSIC "" ;;
             --camera) set_opt CAMERA "$2"; shift ;;
             --no-camera) set_opt CAMERA "" ;;
+            --mitm-cert) set_opt MITM_CERT "$2"; shift ;;
+            --no-mitm-cert) set_opt MITM_CERT "" ;;
             --nav) set_opt NAV 1 ;;
             --no-nav) set_opt NAV 0 ;;
             --services) set_opt SERVICES "$2"; shift ;;
@@ -141,6 +150,10 @@ parse_start_opts() {
         if [ -n "$(find_wifi)" ]; then WIFI=1; else WIFI=0; fi
     fi
     WIFI=$(on "$WIFI")
+    if [ "$CELLULAR" = auto ]; then
+        if [ -n "$(modems)" ]; then CELLULAR=1; else CELLULAR=0; fi
+    fi
+    CELLULAR=$(on "$CELLULAR")
     case "$ROTATE" in
         0) ROTATE=normal ;; 90) ROTATE=right ;; 180) ROTATE=inverted ;;
         270|-90) ROTATE=left ;;
@@ -268,8 +281,10 @@ print_summary() {
     if [ "$AUDIO" = 1 ]; then f="$f, audio"; else off="$off audio"; fi
     if [ "$BLUETOOTH" = 1 ]; then f="$f, bluetooth ($BT_ADAPTER)"; else off="$off bluetooth"; fi
     if [ "$WIFI" = 1 ]; then f="$f, wifi"; else off="$off wifi"; fi
+    if [ "$CELLULAR" = 1 ]; then f="$f, cellular"; else off="$off cellular"; fi
     if [ -n "$MUSIC" ]; then f="$f, music ${MUSIC/#$HOME/\~}"; else off="$off music"; fi
     if [ -n "$CAMERA" ]; then f="$f, camera $CAMERA"; else off="$off camera"; fi
+    [ -n "$MITM_CERT" ] && f="$f, MITM CA ${MITM_CERT/#$HOME/\~}"
     case " $SERVICES " in *" valhalla "*) f="$f, navigation" ;; *) off="$off nav" ;; esac
     info "Features  ${f#, }"
     [ -z "$off" ] || info "Off      $off  ${DIM}(./tesla start --help)$R0"
@@ -416,6 +431,8 @@ EOF
         sudo rm -f "$CHROOT/run/chromium/policies/chromium-fullscreen/10-homepage.json"
     fi
     SERVICES=$(echo $SERVICES)
+    start_dns
+    [ -n "$MITM_CERT" ] && start_mitm_cert
     start_features
     # the profile's base services first (the S/X firmware: its system D-Bus, which QtCar and the
     # services register on)
@@ -504,6 +521,88 @@ EOF
         info "QtCar exited ($status), restarting in 2 s"
         sleep 2 & wait $!
     done
+}
+
+# The chroot's DNS: the PC's resolvers (DNS=host) or DNS's servers, kept so while it runs (the PC
+# changes networks; tools/host-dns.py). The kit's 8.8.8.8 failed on networks that only let their
+# own DNS server through. With --wifi the car's ConnMan writes it from the network it joins, and
+# without one leaves it without a server (no names over the PC's modem): --fill, only then.
+start_dns() {
+    local fill=()
+    [ "$WIFI" = 1 ] && fill=(--fill)
+    sudo python3 tools/host-dns.py "$CHROOT" ${DNS:-host} "${fill[@]}" </dev/null >"$LOG_DIR/dns.log" 2>&1 &
+    add_pid $! host-dns
+    for _ in $(seq 30); do grep -q '^chroot DNS' "$LOG_DIR/dns.log" 2>/dev/null && break; sleep 0.1; done
+    info "DNS: $(sed -n 's/^chroot DNS: //p' "$LOG_DIR/dns.log" | tail -1)"
+}
+
+# MITM_CERT: a CA certificate the car trusts during this run, an intercepting proxy's (docs/mitm.md).
+# Nothing goes into the image. A copy of /etc/ssl/certs with the CA added (to the bundle
+# ca-certificates.crt for curl and Go, as a hashed link for OpenSSL and Qt) is bound over the
+# original; the browsers' NSS database ($HOME/.pki/nssdb: the Model 3's CEF runs in QtCar, user
+# tesla; the S/X's Chromium users) becomes a tmpfs with a fresh database that trusts only it
+# (Mozilla's roots are built into libnssckbi, not in that database).
+# mitm_stage CERT CERTS_DIR OUT: prepares OUT/ca.pem, OUT/certs/ and (with certutil) OUT/nssdb/
+mitm_stage() {
+    local cert=$1 src=$2 out=$3 hash n=0
+    mkdir -p "$out" || return 1
+    # PEM or DER; only the certificate (mitmproxy's mitmproxy-ca.pem has the private key too)
+    openssl x509 -in "$cert" -out "$out/ca.pem" 2>/dev/null ||
+        openssl x509 -inform DER -in "$cert" -out "$out/ca.pem" || return 1
+    hash=$(openssl x509 -in "$out/ca.pem" -noout -subject_hash) || return 1
+    cp -a "$src" "$out/certs" || return 1
+    cp "$out/ca.pem" "$out/certs/mitm-ca.pem"
+    while [ -e "$out/certs/$hash.$n" ] || [ -L "$out/certs/$hash.$n" ]; do n=$((n + 1)); done
+    ln -s mitm-ca.pem "$out/certs/$hash.$n"
+    cat "$out/ca.pem" >>"$out/certs/ca-certificates.crt"
+    command -v certutil >/dev/null || return 0
+    # NSS_TRUST_TYPE=NSS: newer NSS (3.11x+, e.g. Fedora's) writes PKCS#11 3.2 trust objects
+    # (CKO_TRUST) by default; the firmware's NSS 3.39 only reads CKO_NSS_TRUST and found the CA
+    # but not its trust (CEF: "CERT_PKIXVerifyCert ... err=-8172", SEC_ERROR_UNTRUSTED_ISSUER)
+    mkdir -p "$out/nssdb"
+    NSS_TRUST_TYPE=NSS certutil -N -d "sql:$out/nssdb" --empty-password &&
+        NSS_TRUST_TYPE=NSS certutil -A -d "sql:$out/nssdb" -n "MITM CA" -t C,, -i "$out/ca.pem"
+}
+
+start_mitm_cert() {
+    local out=$LOG_DIR/mitm subject user uid gid home browsers=""
+    if ! mitm_stage "$MITM_CERT" "$CHROOT/etc/ssl/certs" "$out" >"$LOG_DIR/mitm.log" 2>&1; then
+        warn "MITM_CERT=$MITM_CERT: not installed, see mitm.log"
+        return
+    fi
+    subject=$(openssl x509 -in "$out/ca.pem" -noout -subject -nameopt sep_comma_plus 2>/dev/null)
+    sudo mount --bind -o ro "$out/certs" "$CHROOT/etc/ssl/certs" || { warn "couldn't mount the MITM CA"; return; }
+    # Tesla's own clients (QtCarServer, QtCarConnMan, QtCarTMServer; also hermes_proxy, absent
+    # from this dump) don't use /etc/ssl/certs for the backend: they pin specific CA files
+    # (RunHermes.vars --ca; the apparmor profiles grant read on these). Append the CA to each
+    # pinned file that exists (a bind-mounted copy = original + CA, so the real pins still
+    # verify), so a server cert the CA signs is accepted on those calls too. The calls still do
+    # mutual TLS with the car's client cert (/var/lib/car_creds, not in the dump): where the
+    # endpoint requires it the handshake fails before the request shows; otherwise it's visible.
+    local pinned pinned_on="" i=0
+    for pinned in etc/ca.crt etc/tesla_motors-ca.crt etc/hermes-eng-ca/products-ca.crt etc/hermes-eng-ca/root-ca.crt; do
+        [ -f "$CHROOT/$pinned" ] || continue
+        mkdir -p "$out/pinned"
+        if cat "$CHROOT/$pinned" "$out/ca.pem" >"$out/pinned/$i.crt" 2>/dev/null &&
+            sudo mount --bind -o ro "$out/pinned/$i.crt" "$CHROOT/$pinned" 2>>"$LOG_DIR/mitm.log"; then
+            pinned_on="$pinned_on $pinned"
+        fi
+        i=$((i + 1))
+    done
+    if [ -f "$out/nssdb/cert9.db" ]; then
+        while IFS=: read -r user _ uid gid _ home _; do
+            case "$user" in tesla|chromium*) ;; *) continue ;; esac
+            [ -d "$CHROOT$home" ] || continue
+            sudo install -d -o "$uid" -g "$gid" -m 700 "$CHROOT$home/.pki" "$CHROOT$home/.pki/nssdb" &&
+                sudo mount -t tmpfs -o "mode=700,uid=$uid,gid=$gid,size=4m" tmpfs "$CHROOT$home/.pki/nssdb" &&
+                sudo install -o "$uid" -g "$gid" -m 600 "$out/nssdb/"* "$CHROOT$home/.pki/nssdb/" &&
+                browsers="$browsers $user"
+        done <"$CHROOT/etc/passwd"
+    fi
+    info "MITM CA ${subject#subject=}: trusted by OpenSSL, Qt, curl${browsers:+ and the browser (NSS of$browsers)}"
+    [ -n "$browsers" ] || warn "the browser doesn't trust the MITM CA: certutil missing (install it: $(pkg_install libnss3-tools))"
+    [ -n "$pinned_on" ] && info "MITM CA also appended to the pinned Tesla anchors:$pinned_on (backend calls still need the car's client cert)"
+    event "mitm-cert: $MITM_CERT${browsers:+ (nss:$browsers)}${pinned_on:+ (pinned:$pinned_on)}"
 }
 
 # before the services start: which services, the car's settings
@@ -628,10 +727,22 @@ start_helpers() {
         # arcade and the fireplace wait for it ("Audio Initializing"). Their sound is silent.
         # The charge rate on the cluster (mi/hr) is QtCar's GUI_chargeAveragePower, which it doesn't
         # take over from QtCarVehicle here: copied.
+        # --cellular: while the PC is online over its modem, the link is presented as the car's LTE.
         local link=()
-        [ "$WIFI" = 1 ] && link=(--no-link)
+        if [ "$WIFI" = 1 ]; then
+            link=(--no-link)
+            [ "$CELLULAR" = 1 ] && link=(--cellular-only)
+        elif [ "$CELLULAR" = 1 ]; then
+            link=(--cellular)
+        fi
         [ "$VEHICLE" = 1 ] && link+=(--copy VAPI_chargeAveragePower=GUI_chargeAveragePower)
         sudo python3 tools/host-connectivity.py "$CHROOT" "${link[@]}" --set GUI_audioReady=variant:boolean:true \
+            </dev/null >"$LOG_DIR/host-connectivity.log" 2>&1 &
+        add_pid $! host-connectivity
+    elif [ "$CELLULAR" = 1 ]; then
+        # Model 3: the cellular values through QtCar's HTTP data values, only while the PC is
+        # online over its modem (otherwise QtCar keeps its own)
+        python3 tools/host-connectivity.py "$CHROOT" --http http://127.0.0.1:4220 --cellular-only \
             </dev/null >"$LOG_DIR/host-connectivity.log" 2>&1 &
         add_pid $! host-connectivity
     fi

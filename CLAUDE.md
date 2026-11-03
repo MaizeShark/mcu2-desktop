@@ -21,6 +21,12 @@ escalator, S offline navigation, Chromium stops cleanly.
 Session 15 (2026-10-27): S charge model (cluster figures), MAME scroll wheels, USB music
 (/mnt/media/usb-*), wiper heater; the sandbox needs `dbus qtcar-dvserver qtcar-vehicle` for
 vehicle data in the S QtCar. Work list: `notes/model-s-parity.md`.
+Session 16 (2026-10-31, branch `cellular-modem`): `--cellular` (`CELLULAR`), the PC's modem
+(ModemManager/NetworkManager) shown as the car's LTE by `host-connectivity.py`; the stick gets
+ModemManager. Sandbox-tested with a fake mmcli; also under a VPN. `DNS=host` (`tools/host-dns.py`):
+the chroot's resolv.conf follows the PC's instead of the fixed 8.8.8.8 (`notes/session16-*.md`).
+Session 17 (2026-11-03): `--mitm-cert` (`MITM_CERT`), a CA trusted for one run (bind-mounted
+`/etc/ssl/certs` copy + tmpfs NSS DB for CEF; `docs/mitm.md`, `notes/session17-*.md`).
 
 Naming: the unit is the Model 3's **MCU2** (Intel Atom, Tesla's "ICE"), not the MCU3 (AMD).
 Until 2026-09-25 the project called it MCU3 (repo mcu3-desktop, `mcu3-*` folders); the session

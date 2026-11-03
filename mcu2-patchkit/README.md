@@ -156,7 +156,8 @@ CenterDisplay computes `GUI_canUseInternet` for maps; MediaV2 separately uses
 ## Differences from the old image (Model 3)
 
 - `icu_preload.so` lives in `/usr/lib` instead of `/tmp`, and `/startup.sh` points there.
-- `/startup.sh` also sets DNS (`/var/run/connman/resolv.conf`). Without it no map tiles
+- `/startup.sh` also sets DNS (`/var/run/connman/resolv.conf`, 8.8.8.8 when it has no server;
+  `./tesla start` keeps it at the PC's resolvers, `DNS`). Without it no map tiles
   load. This was the actual cause of the "invalid API key" issue.
 - `libLLVM-6.0.so`, `libexpatw.so.1` and `libsensors.so.4` are symlinks instead of duplicate copies.
 - Left out on purpose: the Google API key patch (reverted, DNS was the real issue), the libcef.so

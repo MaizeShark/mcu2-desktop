@@ -397,10 +397,94 @@ QtCar (saved in the image, `/var/lib/connman`); the PC is then online through th
   the network's DNS servers). The car's `wifi-power` (GPIOs, PCI device removal) is a stub.
 - Limits: wpa_supplicant 2.6 (WPA2, no WPA3). The connection only exists while QtCar runs.
 - Logs: `wpa_supplicant.log`, `connman.log`, `qtcar-connman.log`.
+- DNS: connmand writes the chroot's resolv.conf with the network's servers; without a network
+  it leaves it without one, and the `DNS` servers go in (see DNS).
 - Model S/X 2026.8.3: the patch kit lets ConnMan's worker continue when the car-only AppArmor
   hat is unavailable in a desktop chroot. Its broker/worker split remains active. On the T480,
   ConnMan exposed powered Wi-Fi to QtCarConnMan and discovered seven service paths while Ethernet
   kept SSH connected. No network was joined, so authentication, DHCP and DNS are unverified.
+
+## DNS
+
+`DNS=host` (default; `--dns "SERVERS"|host`): the chroot resolves names through this PC's
+resolvers. `tools/host-dns.py` (log `dns.log`) writes them into the chroot's resolv.conf (Model 3:
+`/var/run/connman/resolv.conf`, S/X: `/etc/resolv.conf`) at the start and checks every 2 s:
+when the PC changes networks (Wi-Fi, the modem, a VPN), the chroot follows. The chroot shares the
+PC's network, so systemd-resolved's `127.0.0.53` works inside it too. `DNS="1.1.1.1 9.9.9.9"`:
+those servers instead.
+- Before 2026-10-31 the kit's fixed 8.8.8.8 was used: networks that only let their own DNS
+  server through (some home routers, company networks) left QtCar without names (no map, no
+  browser) unless the PC ran a VPN. The Model 3's `/startup.sh` only writes 8.8.8.8 when the file
+  has no server (older kits wrote it at each QtCar start; the helper puts it back within 2 s).
+- Between networks (no server in the PC's resolv.conf) the last servers stay; at the start then
+  8.8.8.8. `./tesla check` shows which servers the chroot will get.
+- With `--wifi` the car's ConnMan writes the file with the joined network's servers, and without
+  a network only its header (`main.conf` has no fallback servers): over the PC's modem QtCar
+  then had no names (search, directions, the browser "offline"; cached map tiles and the PC itself
+  still worked, a restart helped because older kits' `startup.sh` wrote 8.8.8.8). The helper runs
+  with `--fill` then: the `DNS` servers go in only while ConnMan's file has none, and at the start
+  (before connmand; a leftover could be an old network's server). Tested against simulated
+  ConnMan writes, not yet on a real `--wifi` + modem run.
+- glibc 2.22 (the firmware's) only reads resolv.conf when a program starts or calls res_init;
+  Qt calls it before its lookups, Chromium watches the file.
+
+## Cellular
+
+`--cellular` (`CELLULAR=0`; `auto`: on when ModemManager has a modem, the stick's default): this
+PC's cellular modem appears as the car's LTE. The host connects it, not the firmware:
+ModemManager (QMI, MBIM, AT/PPP modems) and NetworkManager, e.g.
+`nmcli connection add type gsm ifname '*' con-name cellular gsm.auto-config yes` (the APN from
+mobile-broadband-provider-info; or `gsm.apn APN`). The chroot shares the host's network, so
+QtCar is online through it like through any other route.
+- While the host's default route goes through a modem's interface (its net port, or the
+  connected bearer's, e.g. `wwan0` or `ppp0`), `tools/host-connectivity.py --cellular` reads the
+  modem with `mmcli` every 15 s and publishes what the car's QtCarConnMan publishes from its own
+  modem: `LINK_linkState=cellular` (the status bar's cell icon instead of Wi-Fi),
+  `CONN_cellConnected` (without it the icon is crossed out), `CONN_cellSystemMode` (the label:
+  LTE, 3G, E; 5G shows as LTE, the UIs have no 5G label), `CONN_cellSignalBars` (0-5, from
+  ModemManager's signal quality: 0/1 the dot, 5 all four bars), `CONN_cellOperator`, and on the
+  S/X the `CONN_cellNetwork` enum (LTE, 5GNSA, ...). When the route moves to Wi-Fi or Ethernet
+  (NetworkManager prefers them), the cell values are withdrawn. Under a VPN (WireGuard, OpenVPN,
+  Tailscale: a `wireguard`/`tun` interface on the route) the modem counts if the main table's
+  default route, which the tunnel runs over, is the modem's; the log then says "(VPN wg0)".
+- Unplugged and plugged in again: the values are withdrawn and come back with the next cycle;
+  while the probe fails it runs every 3 s instead of 15 s. Each change of the published values
+  is logged ("cellular values: ...").
+- Model 3: through QtCar's HTTP data values (:4220), only while online over the modem. Its
+  `OPTION_dataPlan` is `Full` already, so QtCar keeps internet on the cellular link.
+- Model S/X: through D-Bus like the Wi-Fi presentation (see Offline navigation). CenterDisplay
+  gives a cellular link internet only with the car's data plan (Premium Connectivity,
+  `OPTION_dataPlan`, `None` here): the bridge sets it to `Full` (QtCar keeps it in
+  QtCarSettings.db) and back to the previous value when the modem goes. MediaV2 and
+  ChromiumAdapter only look at the Wi-Fi values, so `LINK_wifiState` and `CONN_wifiConnected`
+  stay online too; the status bar shows the cell icon.
+- With `--wifi` the car's ConnMan owns the link values; cellular values are then only published
+  while the PC is online over the modem (`--cellular-only`). A tester's run (2026-11-01): LTE
+  -> Wi-Fi -> LTE switches the icons, but back on LTE QtCar was offline: ConnMan had left the
+  chroot without a DNS server (see DNS, `--fill`).
+- `./tesla check` lists the modems (`mmcli`). Log: `host-connectivity.log` ("host online over a
+  modem: Quectel EM12-G on wwan0: Telekom.de, LTE, signal 4/5 (72 %)").
+- Tested (2026-10-31) in the sandbox for both firmwares with a simulated ModemManager (fake
+  `mmcli`/`ip`): icon, LTE/3G label, bars, operator, back to Wi-Fi or "no service". Not yet
+  with a real modem.
+- Why not the car's own stack: the firmware's oFono (1.17) talks to the car's Telit LE940B6 (S/X
+  also a Quectel AG525R-GL) over Ethernet (AT commands on 192.168.90.60:50950, data on VLAN 20),
+  not USB; its stock USB plugins have no QMI or MBIM, and QtCarConnMan only reads the modem
+  `/tesla` with Tesla's `org.ofono.Tesla.Diagnostics` interface.
+
+## MITM CA
+
+`--mitm-cert FILE` (`MITM_CERT=`): the car trusts this CA certificate during the run, so an
+intercepting proxy (mitmproxy) can read its HTTPS traffic. Per run, nothing goes into the image:
+a copy of `/etc/ssl/certs` with the CA (OpenSSL, Qt, curl) is bind-mounted over the original, and
+the browser's NSS database (`/home/tesla/.pki/nssdb`) is a tmpfs with a database that trusts it
+(made with the host's `certutil`). It is also appended to the firmware's pinned Tesla CA anchors
+(`/etc/ca.crt`, `/etc/tesla_motors-ca.crt`, `/etc/hermes-eng-ca/*`), so Tesla's own clients accept
+a certificate it signs; those calls still do mutual TLS with the car's client certificate (not in
+the dump), so you see the attempt and, where the endpoint doesn't require that certificate, the
+request. Model 3 tested (curl, OpenSSL, the browser in the sandbox; the pinned append with
+`openssl verify`); Model S/X untested. Setup with mitmproxy, the NAT rules for the car's users,
+seeing the backend's requests, and the limits: [mitm.md](mitm.md).
 
 ## USB music
 

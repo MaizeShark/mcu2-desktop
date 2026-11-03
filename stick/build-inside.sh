@@ -54,6 +54,9 @@ trap 'umount -R "$ROOT/proc" "$ROOT/sys" "$ROOT/dev" 2>/dev/null || true' EXIT
 cp -a /repo/stick/overlay/. "$ROOT/"
 chown -R 0:0 "$ROOT/etc/sudoers.d" "$ROOT/usr/local" "$ROOT/etc/tesla-stick"
 chmod 440 "$ROOT/etc/sudoers.d/mcu"
+# NetworkManager reads profiles only when they are root's and private
+chown -R 0:0 "$ROOT/usr/lib/NetworkManager/system-connections"
+chmod 600 "$ROOT"/usr/lib/NetworkManager/system-connections/*.nmconnection
 cp /repo/tesla-touch/99-tesla-touch.rules /repo/tools/99-tesla-sound.rules "$ROOT/etc/udev/rules.d/"
 
 echo "$HOSTNAME" >"$ROOT/etc/hostname"

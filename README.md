@@ -58,6 +58,7 @@ Touch: left click / drag = finger, mouse wheel = pinch zoom, right click = long 
 | GPS: a position, a route to drive, or a real receiver | `--gps` |
 | Sound: chimes, turn signals, media, volume | `--audio` |
 | Bluetooth with the car's own stack: pairing, phone, contacts, music from the phone | `--bluetooth` |
+| The PC's cellular modem as the car's LTE: cell icon, LTE/3G, bars, operator (sandbox-tested, no real modem yet) | `--cellular` |
 | A folder as USB stick with music | `--music DIR` |
 | Backup camera from any V4L2 device, or the PC's webcam | `--camera DEV\|auto` |
 | A bootable USB stick that starts straight into QtCar (built from your own image, for your own use) | `./tesla build-stick` |
@@ -79,6 +80,7 @@ and the car's sound through its own audio mixer. Details per feature: [docs/feat
 | [docs/features.md](docs/features.md) | each feature: what it needs, how it works, logs, limits |
 | [docs/how-it-works.md](docs/how-it-works.md) | architecture, patch kit, ports, run folders |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | checks, log summaries, symptoms and fixes |
+| [docs/mitm.md](docs/mitm.md) | watching the car's HTTPS traffic (`--mitm-cert`, mitmproxy) |
 | [docs/development.md](docs/development.md) | the sudo-free sandbox, changing the kit, conventions |
 | [stick/README.md](stick/README.md) | the bootable USB stick: building, testing in qemu, using it |
 

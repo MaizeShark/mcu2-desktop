@@ -13,7 +13,8 @@ your own use only, never share it. No sudo: built in a rootless podman container
 Output: stick/work/mcu2-stick.img, written to a stick with dd (printed at the end).
 
   --conf FILE        the stick's tesla.conf as it is (default: this tesla.conf's features and
-                     car, with CAMERA=auto, BLUETOOTH=auto, WIFI=auto: when the hardware is there)
+                     car, with CAMERA=auto, BLUETOOTH=auto, WIFI=auto, CELLULAR=auto: when
+                     the hardware is there)
   --music DIR        music for the stick's ~/Music (default: MUSIC from tesla.conf)
   --no-music         no music
   --keymap LAYOUT    keyboard layout, e.g. de, us (default: this PC's: $(host_keymap))
@@ -61,6 +62,8 @@ CAMERA=auto
 BLUETOOTH=auto
 # the car's Wi-Fi (QtCar's settings) on the PC's adapter while QtCar runs
 WIFI=auto
+# a cellular modem (NetworkManager's "cellular" connection) shown as the car's LTE
+CELLULAR=auto
 MUSIC=$( [ -n "$S_MUSIC" ] && echo "~/Music" )
 EOF
 }

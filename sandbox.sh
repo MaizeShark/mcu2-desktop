@@ -219,7 +219,9 @@ CL=""
 [ -n "$CLUSTER" ] && CL="(while :; do SB_BIN=QtCarCluster SB_DISPLAY=:97.1 SB_HOME=/home/qtcluster SB_ARGS='-graphicssystem raster --isic --ic --window 1.5' SB_MESA=$MESA NOBROWSER= GDBX= /sandbox-qtcar.sh $MODE; echo '=== sandbox: QtCarCluster exited, restarting'; sleep 2; done) >/out/cluster.log 2>&1 &"
 HOMEQ=""; [ -n "$SX" ] && HOMEQ=/home/tesla
 
-podman run --rm --timeout $((T + 20)) --network host "${IPC[@]}" -e QCSVC_NOUSER=1 -e WIFI_DEV="${WIFI_DEV:-}" -e QTCAR_ARGS="${QTCAR_ARGS:-}" -e CEF_EXTRA_ARGS="${CEF_EXTRA_ARGS:-}" -e CEF_REMOTE_DEBUGGING_PORT="${CEF_REMOTE_DEBUGGING_PORT:-}" -v /:/host:ro "${DEV[@]}" \
+# label=disable: with SELinux enforcing (Fedora) container_t may not execute the host's
+# loader and gdb under /host ("Permission denied")
+podman run --rm --timeout $((T + 20)) --network host --security-opt label=disable "${IPC[@]}" -e QCSVC_NOUSER=1 -e WIFI_DEV="${WIFI_DEV:-}" -e QTCAR_ARGS="${QTCAR_ARGS:-}" -e CEF_EXTRA_ARGS="${CEF_EXTRA_ARGS:-}" -e CEF_REMOTE_DEBUGGING_PORT="${CEF_REMOTE_DEBUGGING_PORT:-}" -v /:/host:ro "${DEV[@]}" \
     -v /tmp/.X11-unix:/tmp/.X11-unix -v "$OUT":/out --rootfs "$ROOT" /bin/sh -c "
     $SVC
     sleep 3

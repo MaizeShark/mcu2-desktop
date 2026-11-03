@@ -7,6 +7,7 @@
 | [features.md](features.md) | each feature: what it does, what it needs, how it works, where its logs are, its limits |
 | [how-it-works.md](how-it-works.md) | the architecture: image, chroot, patch kit, firmware services, ports, data paths, run folders |
 | [troubleshooting.md](troubleshooting.md) | checks, log summaries, known symptoms and their fixes, problem reports |
+| [mitm.md](mitm.md) | watching the car's HTTPS traffic: `--mitm-cert` and a mitmproxy setup |
 | [development.md](development.md) | working on this repo: the sudo-free sandbox, the patch kit, testing, conventions |
 
 Both firmwares are covered: the Model 3's 2019.20.4.2 and the Model S/X's 2026.8.3 (its setup:
@@ -32,6 +33,8 @@ everything was found out.
 | GPS | `--gps` | python3; receiver: read access (group `dialout`) | – | `qtcar-gpsmanager` | `tesla-gps.py` | `gps.log`, `qtcar-gpsmanager.log` |
 | Sound | `--audio` | `snd-aloop`, `arecord`, `pw-play` (PipeWire) or `pacat`/`aplay`; Model 3 also needs `sox`; `tools/99-tesla-sound.rules` | Model 3: kit group `audio` | Model 3: `audioweaver`, `audiod`, `qtcar-audiod`, `qtcar-mediaserver`; Model S/X: `qtcar-audiod`, `qtcar-mediaserver` | audio pipeline, speech-state keeper | `audio.log`, `qtcar-audiod.log`; Model 3: `audiod.log`, `audioweaver.log` |
 | Bluetooth | `--bluetooth` | a Bluetooth adapter (BlueZ stopped while it runs) | – | `dbus`, `bsa_server`, `btd`, `qtcar-bluetooth`, `a2dpbridge` (with audio) | `bluetooth/hci-bridge.py` | `bsa_server.log`, `btd.log`, `qtcar-bluetooth.log`, `bt-bridge.log` |
+| Cellular | `--cellular` or `auto` | ModemManager with a modem, NetworkManager connecting it (Fedora: `NetworkManager-wwan`) | – | – | `host-connectivity.py --cellular` (Model 3: `--http`, no sudo) | `host-connectivity.log` |
+| MITM CA | `--mitm-cert FILE` | `openssl`; for the browser `certutil` (Fedora `nss-tools`, Debian `libnss3-tools`); a proxy such as mitmproxy | – (bind mounts for the run) | – | – | `mitm.log`, `mitm/` |
 | USB music | `--music DIR` | a folder with music | `[usb] media_path` (`system`) | `qtcar-mediaserver` | – | `qtcar-mediaserver.log` |
 | Backup camera | `--camera DEV` or `auto` | `ffmpeg`, `v4l2loopback` with a second device (`/dev/video32`) | `[bkcam]` (set at start) | – | ffmpeg | `camera.log` |
 

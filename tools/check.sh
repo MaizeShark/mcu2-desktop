@@ -232,6 +232,70 @@ check_features() {
         chk "$( [ "$v" = 1 ] && echo fail || echo off)" "no Wi-Fi adapter${wdev:+ $wdev} (wifi)" "WIFI_ADAPTER=NAME in tesla.conf"
     fi
 
+    # CELLULAR: ModemManager's modems (NetworkManager connects them; QtCar only shows the link)
+    v=$(on "$CELLULAR")
+    [ "$CELLULAR" = auto ] && v=auto    # on when there is a modem: nothing to complain about
+    local mlist
+    if ! mlist=$(modems); then
+        if [ "$v" = 1 ]; then
+            chk fail "ModemManager isn't running (cellular)" "install and start it: sudo dnf/apt install ModemManager; sudo systemctl enable --now ModemManager"
+        else
+            chk off "no ModemManager (cellular)"
+        fi
+    elif [ -z "$mlist" ]; then
+        if [ "$v" = 1 ]; then
+            chk warn "ModemManager runs, no modem found (cellular)" "plug the modem in; usb-modeswitch switches most USB sticks into modem mode"
+        else
+            chk off "ModemManager runs, no modem found (cellular)"
+        fi
+    else
+        while IFS= read -r m; do
+            chk "$( [ "$v" = 0 ] && echo off || echo ok)" "modem $m$( [ "$v" = 0 ] && echo ' (cellular off: --cellular)')"
+        done <<<"$mlist"
+    fi
+
+    # DNS: the chroot's resolvers (tools/host-dns.py)
+    local ns
+    local wifi_note=""
+    [ "$(on "$WIFI")" = 1 ] && wifi_note=" while QtCar isn't on a Wi-Fi network (on one: its servers)"
+    if [ "${DNS:-host}" = host ]; then
+        ns=$(awk '$1 == "nameserver" {print $2}' /etc/resolv.conf 2>/dev/null | paste -sd' ')
+        if [ -n "$ns" ]; then
+            chk ok "DNS: this PC's ($ns)$wifi_note"
+        else
+            chk warn "DNS: this PC has no DNS server in /etc/resolv.conf (the chroot gets 8.8.8.8 until it has one)" \
+                "connect the PC, or set servers: DNS=\"1.1.1.1 9.9.9.9\" in tesla.conf (--dns)"
+        fi
+    elif ns=$(python3 -c 'import ipaddress, sys
+print(" ".join(str(ipaddress.ip_address(a)) for a in sys.argv[1].replace(",", " ").split()))' "$DNS" 2>/dev/null) && [ -n "$ns" ]; then
+        chk ok "DNS: $ns$wifi_note"
+    else
+        chk fail "DNS=\"$DNS\" isn't host or a list of IP addresses" "e.g. DNS=\"1.1.1.1 9.9.9.9\", or DNS=host (this PC's)"
+    fi
+
+    # MITM_CERT: a CA the car trusts during the run (start_mitm_cert, docs/mitm.md)
+    if [ -n "$MITM_CERT" ]; then
+        local inform="" subj
+        if ! command -v openssl >/dev/null; then
+            chk fail "openssl missing (MITM_CERT)" "install it: $(pkg_install openssl)"
+        elif [ ! -f "$MITM_CERT" ]; then
+            chk fail "MITM_CERT=$MITM_CERT doesn't exist" "mitmproxy writes it on its first start: ~/.mitmproxy/mitmproxy-ca-cert.pem"
+        elif ! openssl x509 -in "$MITM_CERT" -noout 2>/dev/null && ! { inform="-inform DER"; openssl x509 $inform -in "$MITM_CERT" -noout 2>/dev/null; }; then
+            chk fail "MITM_CERT=$MITM_CERT isn't a certificate (PEM or DER)"
+        else
+            subj=$(openssl x509 $inform -in "$MITM_CERT" -noout -subject -nameopt sep_comma_plus | sed 's/^subject=//')
+            chk ok "MITM CA $subj ($MITM_CERT)"
+            openssl x509 $inform -in "$MITM_CERT" -noout -ext basicConstraints 2>/dev/null | grep -q 'CA:TRUE' ||
+                chk warn "MITM_CERT isn't a CA certificate (no CA:TRUE): it can't sign the proxy's certificates" \
+                    "give the proxy's CA, e.g. ~/.mitmproxy/mitmproxy-ca-cert.pem"
+            openssl x509 $inform -in "$MITM_CERT" -noout -checkend 0 >/dev/null 2>&1 ||
+                chk warn "MITM_CERT has expired ($(openssl x509 $inform -in "$MITM_CERT" -noout -enddate | cut -d= -f2))"
+        fi
+        tool warn certutil libnss3-tools "MITM_CERT: the browser's NSS database"
+    else
+        chk off "MITM CA: none (--mitm-cert FILE)"
+    fi
+
     # MUSIC
     if [ -n "$MUSIC" ]; then
         if [ -d "$MUSIC" ]; then
@@ -320,6 +384,8 @@ features_on() {
     [ -n "$CAMERA" ] && f="$f camera"
     [ "$(on "$BLUETOOTH")" = 1 ] && f="$f bluetooth"
     [ "$(on "$WIFI")" = 1 ] && f="$f wifi"
+    { [ "$CELLULAR" = 1 ] || { [ "$CELLULAR" = auto ] && [ -n "$(modems)" ]; }; } && f="$f cellular"
     [ "$NAV" = 1 ] && f="$f nav"
+    [ -n "$MITM_CERT" ] && f="$f mitm-cert"
     echo "${f# }"
 }
