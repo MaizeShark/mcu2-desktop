@@ -10,7 +10,13 @@
 | `tools/start.sh` | `./tesla start`: options, mounts, services, helpers, the QtCar loop, cleanup |
 | `tools/build-image.sh` | `./tesla build-image` |
 | `tools/logsummary.py` | `./tesla logs`; `service_status()` is also used by `./tesla status` and the panel |
-| `tools/media-touch.py` | Model S/X VNC touches for offscreen Chromium through local DevTools; reads QtCar's touch geometry |
+| `tools/media-touch.py` | Model S/X: touches for the offscreen media Chromium through its local DevTools; reads QtCar's touch geometry |
+| `tools/browser-touch.py`, `tools/theater-control.py` | Model S/X: X11 touches for the Browser and Theater windows; Theater's tile navigation (DevTools :9225) |
+| `tools/host-connectivity.py` | Model S/X: the host's internet status, audio ready and copied values into QtCar's data values |
+| `tools/game-windows.py` | `--native`: takes the arcade's windows from the desktop's window manager |
+| `tools/syslog-sink.py`, `tools/cow-apply.py` | the chroot's syslog into `syslog.log`; `IMAGE_RAM`'s write-back into the image |
+| `tools/build-stick.sh`, `stick/` | `./tesla build-stick` and what goes on the stick ([stick/README.md](../stick/README.md)) |
+| `bluetooth/` | `hci-bridge.py`: the PC's adapter as the firmware's Broadcom UART ([bluetooth/README.md](../bluetooth/README.md)) |
 | `tesla.conf.example` | all settings with their defaults |
 | `start_all.sh` | alias for `./tesla start` |
 | `mcu2-patchkit/` | the patch kit: `mcu2_patch.py` (the engine), `src/` (shared: `qtcar-service`, `sv` wrapper), `profiles/<firmware>/` (per firmware version: `profile.toml`, `kit.py` with the patches and files, `sources.toml`, `src/` with its shims; payload cached in the untracked `payload/<profile>/`) |
@@ -68,8 +74,9 @@ engine or `src/`. Binary patches are `(id, group, offset, original bytes, new by
 description)` entries with the file's SHA-1 before and after. Every edit of `mcu2_patch.py`,
 `src/` or the profile changes the kit version, so `./tesla check` asks for a `./tesla build-image`.
 The Model S/X profile's `src/media-services.sh` starts the firmware's web media jobs, and its
-EGL shim renders the offscreen browser pixmap in QtCar. The host's `media-touch.py` is started
-only in VNC mode; the firmware's Chromium input helper still runs for native displays.
+EGL shim renders the offscreen browser pixmap in QtCar. The host's `media-touch.py` and
+`browser-touch.py` run on VNC and native displays (the firmware's Chromium input helpers run
+too, but didn't reach the lower web content on their own).
 
 ## A second firmware
 

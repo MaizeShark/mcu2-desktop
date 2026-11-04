@@ -26,6 +26,12 @@ origin and GitHub. Confirmed in the user's real runs: charging (cluster figures)
 wheels, USB music, Bluetooth music through the S's audiod, and everything of session 14. The user
 doesn't need `--native` on Wayland. The kit changed slightly since the user's last build-image
 (a comment, the sv wrapper's pid-file message): `./tesla check` warns until the next rebuild.
+After the merge (2026-10-27/28), fixes from GitHub issues #1, #2, #5: `bt-watch` for the Model 3,
+the dump-ownership check, the Wi-Fi settings in `tesla.conf.example`, the stick's GRUB search
+(see the end of `session15-2026-10-27.md`). Sessions 16-17 (branch `cellular-modem`, merged
+into `main` 2026-11-04): `--cellular`, `DNS=host`, `--mitm-cert` (`notes/session16-*.md`,
+`session17-*.md`, `docs/mitm.md`); `--cellular` is sandbox-tested only (no real modem yet).
+On 2026-11-04 all docs were brought up to date and the README got screenshots.
 
 ## 1. Open (ask the user what they want)
 From model-s-parity.md: confirm the route line on the elevation tiles (`build-image --maps US`,

@@ -15,13 +15,18 @@ signal on the web panel, and the arcade (Beach Buggy Racing 2, MAME) playable, t
 `--native` on the laptop. Session 8 (2026-09-26): `./tesla build-stick`, a bootable USB stick
 (Debian 13 live, persistence, boots into `--native`), tested in qemu, not yet on hardware.
 Details: `notes/session6-*.md`, `notes/session7-*.md`, `notes/session8-*.md`.
+Sessions 9-13 (2026-09-27..10-21): the Model S/X firmware 2026.8.3 (UI and cluster, online maps,
+streaming web apps, Browser, Theater, Wi-Fi, camera, Bluetooth on the T480), Fedora 44.
 Session 14 (2026-10-21): Model S/X parity audit and plan in `notes/model-s-parity.md` (items done
 there are marked); S QtCar runs `--emulated`, the S profile's `escalator-stub` replaces the car's
 escalator, S offline navigation, Chromium stops cleanly.
 Session 15 (2026-10-27): S charge model (cluster figures), MAME scroll wheels, USB music
 (/mnt/media/usb-*), wiper heater; the sandbox needs `dbus qtcar-dvserver qtcar-vehicle` for
-vehicle data in the S QtCar. Work list: `notes/model-s-parity.md`.
-Session 16 (2026-10-31, branch `cellular-modem`): `--cellular` (`CELLULAR`), the PC's modem
+vehicle data in the S QtCar. `model-s` merged into `main` 2026-10-27. After it (GitHub issues
+#1, #2, #5): `bt-watch` for the Model 3 too, `./tesla check` notices a dump extracted without
+root, Wi-Fi settings in `tesla.conf.example`, the stick's GRUB finds its partition without the
+label. Work list: `notes/model-s-parity.md`.
+Session 16 (2026-10-31; branch `cellular-modem`, in `main` since 2026-11-04): `--cellular` (`CELLULAR`), the PC's modem
 (ModemManager/NetworkManager) shown as the car's LTE by `host-connectivity.py`; the stick gets
 ModemManager. Sandbox-tested with a fake mmcli; also under a VPN. `DNS=host` (`tools/host-dns.py`):
 the chroot's resolv.conf follows the PC's instead of the fixed 8.8.8.8 (`notes/session16-*.md`).
@@ -59,6 +64,13 @@ kit stamp `/etc/mcu3-patchkit`, the kit's old asound.conf marker.
   `service_status()` for `./tesla status` and the panel), `build-image.sh`. Settings:
   `tesla.conf` (untracked, from `tesla.conf.example`) < environment < options.
   `./tesla start --dry-run` and `./tesla check` run without sudo. `start_all.sh` = alias.
+  Model S/X helpers: `media-touch.py`, `browser-touch.py`, `theater-control.py` (touches and
+  Theater for the offscreen Chromium windows), `host-connectivity.py` (internet status, audio
+  ready, copied values, `--cellular`: the modem as the car's LTE), `host-dns.py` (`DNS=host`).
+  Also `syslog-sink.py` (the chroot's syslog),
+  `cow-apply.py` (`IMAGE_RAM`'s write-back).
+- `bluetooth/hci-bridge.py`: the PC's adapter (HCI user channel) as the firmware's Broadcom UART
+  for `--bluetooth`; `bt-watch` in start.sh restarts btd when BSA restarts itself.
 - Logs go to `logs/<time>/` (`logs/latest`, `logs/current` while running; `events.log`, `config`,
   `pids`, `state`), the first thing to read when the user reports a problem: `./tesla logs RUN`
   summarizes it (restarts, `journalctl -k` segfaults, audio, GPS; the user is in group adm).

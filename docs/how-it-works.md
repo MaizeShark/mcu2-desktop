@@ -173,7 +173,8 @@ Each run has a folder `logs/<date-time>/`:
 | `<service>.log` | output of each firmware service, with `tesla: <service> exited (N) ... [t=EPOCH]` on restarts |
 | `qtcar.log` | QtCar's output |
 | `syslog.log` | what the firmware services log through syslog (the chroot's `/dev/log` -> `/tmp/log`, `tools/syslog-sink.py`) |
-| `can.log`, `gps.log`, `audio.log`, `camera.log`, `touch.err`, `xvfb.log`, `x11vnc.log` | the host helpers |
+| `can.log`, `gps.log`, `audio.log`, `camera.log`, `touch.err`, `xvfb.log`, `x11vnc.log`, `game-windows.log`, `bt-bridge.log`, `bt-watch.log` | the host helpers |
+| `escalator-stub.log`, `cluster.log`, `xvfb-cluster.log`, `x11vnc-cluster.log`, `host-connectivity.log`, `media-touch.log`, `browser-touch.log`, `theater-touch.log`, `theater-control.log` | Model S/X: the escalator stub, the cluster, the Chromium helpers |
 | `events.log` | start, the services started, QtCar starts and exits (with the reason for its own restarts), stop |
 | `config` | the settings of the run and their source |
 | `state`, `pids` | for `./tesla stop` / `status`: the start's pid, what it mounted, the helpers' pids |

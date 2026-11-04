@@ -127,4 +127,8 @@ Session 15 (2026-10-27), each confirmed in a real run by the user unless noted:
 Merged into `main` on 2026-10-27 (the user: ready for GitHub; `--native` on Wayland not needed).
 Left open, as limits for now: the route line on the elevation tiles
 (user: "all seems to work", not confirmed separately), roof colour / Model X look / badge
-(optional), 7 (`--native` on Wayland, with the user), 8 (the stick on hardware), then the merge.
+(optional), 7 (`--native` on Wayland, with the user), 8 (the stick on hardware).
+
+After the merge (2026-10-27/28, GitHub issues): `bt-watch` runs for the Model 3 too (#2), `./tesla
+check` / `build-image --fresh` notice a dump extracted without root (#1, #2), `tesla.conf.example`
+has the Wi-Fi settings (#2), the stick's GRUB no longer depends on finding its label (#5).

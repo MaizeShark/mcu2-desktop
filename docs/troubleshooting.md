@@ -65,6 +65,7 @@ it). `config` in there shows the settings used. For a service that hangs or beha
 | QtCar restarts right after the start | normal once: it applies the car configuration and restarts itself (`events.log` gives the reason) |
 | The stick: black screen for minutes, `./tesla status` shows everything running | the stick is too slow (cheap USB 2 sticks stall on small synchronous writes); `IMAGE_RAM` (default on a stick) keeps the writes in RAM. Check the stick with `f3probe` (fake capacity corrupts the image) |
 | The stick shows a console instead of QtCar | the reason is above the help text; `./tesla start` failed 3 times in a row: `cd ~/mcu2-desktop; ./tesla logs`, `logs/session.log`; `tesla-start` tries again. Boot option "software rendering" if the GPU is the problem |
+| The stick: GRUB stops with `no such device: TESLABOOT` | a stick built before 2026-10-28 found its partition by the label only, which some PC firmwares don't offer; build it again (`./tesla build-stick`): GRUB now uses the device it was loaded from, then the label, then any partition with its menu |
 | The stick: no camera with `--secure-boot` | the kernel refuses the unsigned v4l2loopback module under Secure Boot; build without it and turn Secure Boot off |
 | A service's own messages | `syslog.log` in the run folder (what the services send to syslog) |
 | Many ERROR lines in `qtcar.log` | normal: services, hardware and online servers that aren't there |

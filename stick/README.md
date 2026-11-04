@@ -57,7 +57,9 @@ runs `stick/build-inside.sh`:
 2. configuration: `overlay/` (session scripts, keys, autologin, grow service), user `mcu`
    (uid 1000, sudo without password: ./tesla needs it), keyboard, time zone, host name, the
    repo's udev rules, initramfs with live-boot.
-3. squashfs (zstd), GRUB (`grub-mkstandalone`, finds the menu by the partition label).
+3. squashfs (zstd), GRUB (`grub-mkstandalone`): it finds its partition by the device it was
+   loaded from, then by the label `TESLABOOT`, then by any partition with `boot/grub/grub.cfg`
+   (the label alone failed on some PC firmwares: "no such device: TESLABOOT", GitHub issue #5).
 4. the persistence partition with `mke2fs -d`: the files git tracks plus tesla-touch's binary
    and the CAN database, the generated tesla.conf, the image (bind-mounted, not copied), music.
 5. the GPT disk image from both partitions.

@@ -48,9 +48,9 @@ Model S/X 2026.8.3: fireplace, dog mode and camp mode (no HAL 9000 in this firmw
 escalator never runs here; the profile's `escalator-stub` answers QtCar's requests on
 `/tmp/escalator` from a fixed table (start/stop of the videos and MAME go to the `sv` wrapper,
 display and backlight requests get an "ok", everything else is refused and logged in
-`escalator-stub.log`). The fireplace played through the stub and the S's GStreamer `tvideo` in
-podman; started from the UI it's untested. Their sounds need the car's audio (not yet on the S).
-QtCar waits for its audio system before the videos and games ("Audio Initializing"): `./tesla
+`escalator-stub.log`). The fireplace and the dog screen work from the UI (the user's runs,
+sessions 14-15); camp mode takes the same path (stub, the S's GStreamer `tvideo`) but wasn't
+tried from the UI. Their sounds need `--audio`. QtCar waits for its audio system before the videos and games ("Audio Initializing"): `./tesla
 start` keeps `GUI_audioReady` true for the S. Dog mode also needs the car's HVAC to report
 nominal (`HVAC_systemNominal`, from CAN): "Climate Keeper Unavailable" until the vehicle data has it.
 
@@ -231,8 +231,8 @@ classics (Asteroids, Missile Command, Centipede, Lunar Lander, ...). 2048 is par
   `game-windows.log` in the run folder.
 - Model S/X 2026.8.3: MAME (`mametesla`, 9 ROMs) starts through the escalator stub and ran in
   the user's run (over VNC without its mouse grab). Its keys are the steering wheel's scroll
-  wheels: the panel's Arcade tab sets the S's `STW_status` (sandbox: the `STW_*` values follow;
-  the keys in a running game are untested). 2048, chess and backgammon (built into the
+  wheels: the panel's Arcade tab sets the S's `STW_status`, and the games take them (the user's
+  run, 2026-10-27). 2048, chess and backgammon (built into the
   firmware) start through the stub and `qtcar-service` with the settings QtCar writes for them
   (`tidk.vars`). They need QtCar to see its own screen as the center display (the S shim maps the
   car's display name `:0` to QtCar's), MIT-SHM (`mit_shm = "root"`: Xvfb runs as root) and a patch
@@ -240,8 +240,8 @@ classics (Asteroids, Missile Command, Centipede, Lunar Lander, ...). 2048 is par
   Racing 2 and the other downloadable games are not in the firmware dump, and "Install" can't
   fetch them: the packages come from Tesla's update servers, which need the car's credentials.
 - Limits: the MAME games aren't really usable on a desktop (the desktop's panel over QtCar's top
-  bar, windows in odd places); Beach Buggy Racing 2 and 2048 are the ones to play. VNC mode
-  (Xvfb) is untested with the games.
+  bar, windows in odd places); Beach Buggy Racing 2 and 2048 are the ones to play. On the Model 3
+  VNC mode (Xvfb) is barely tested with the games (the S's MAME ran over VNC).
 
 ## Vehicle data and the web panel
 
@@ -345,7 +345,8 @@ by AudioWeaver; on the Model S/X also Chromium web media, Browser and games thro
   Sandbox-tested: a tone into Chromium's loopback reaches the stereo mix on the right side.
   Earlier runs (sessions 11-13) captured the `virtual` subdevices directly, without the car's sounds.
 - Limits: the Model 3 stereo mix of the 8 amplifier channels is approximate. The 2019 Model 3's
-  TuneIn still needs its media backend. Radio and Bluetooth need their respective hardware.
+  TuneIn still needs its media backend. The radio needs its tuner hardware (silent here);
+  Bluetooth music needs `--bluetooth` and an adapter.
 
 ## Bluetooth
 
@@ -498,7 +499,7 @@ seeing the backend's requests, and the limits: [mitm.md](mitm.md).
   mounts them; `[usb] media_path` doesn't apply), so `./tesla start` mounts the folder at
   `/mnt/media/usb-music`. QtCar indexes it at the start; the Media app's source list has USB
   (songs, artists, albums, folders with their tags) once the car's audio runs (`--audio`), and
-  the media server plays the files (sandbox; the sound through the car's audio is untested). The
+  the media server plays the files through the car's audio (the user's run, 2026-10-27). The
   media server's own session bus and gvfs (firmware jobs) aren't needed for this.
 
 ## Backup camera

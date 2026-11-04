@@ -36,8 +36,9 @@ What the bridge does handle:
 `./tesla start --bluetooth` (tools/start.sh `start_bluetooth`): stops `bluetooth.service`, starts
 the bridge (it takes the adapter down itself), binds its pseudo terminal as the chroot's
 `/dev/ttyS0`, and starts the services `dbus` (the firmware's bus), `bsa_server`, `btd` (waits
-for both), `qtcar-bluetooth`, and with `--audio` the Model 3 `a2dpbridge` or Model S/X host
-`audio-bluetooth` helper. `./tesla stop` gives the adapter back to BlueZ; if it doesn't answer,
+for both), `qtcar-bluetooth`, and with `--audio` on the Model 3 `a2dpbridge` (on the Model S/X
+audiod starts it itself, through the escalator stub). The `bt-watch` helper restarts btd when
+BSA restarts itself (below). `./tesla stop` gives the adapter back to BlueZ; if it doesn't answer,
 it reloads its driver and, as a last resort, power-cycles its USB port (`restore_bluetooth` in
 tools/common.sh).
 
@@ -56,10 +57,12 @@ The firmware's D-Bus policy requires QtCarBluetooth to run as `qtbt`; the patch 
 sets that user and groups for this profile. With local vendor success acknowledgements, BSA,
 btd and QtCarBluetooth started, `adapterAbnormal=false`, and a D-Bus `startDiscovery` request
 sent a standard HCI inquiry. A rooted Pixel 7a then paired, connected HFP and A2DP, and sent
-music to the T480 speakers. This firmware has no standalone AudioWeaver, so the Model S/X host
-launcher captures `virtual` loopback subdevice 0 directly as 32-bit stereo and converts it to
-the host's 16-bit playback. A play/pause comparison measured RMS 0.112 versus 0.000015 on the
-speaker monitor.
+music to the T480 speakers (then captured from `virtual` loopback subdevice 0 directly; a
+play/pause comparison measured RMS 0.112 versus 0.000015 on the speaker monitor). Since
+2026-10-22 the S's car sound runs through its own audiod (AudioWeaver built in): audiod asks
+the escalator stub for `a2dpbridge` and mixes the phone's stream with the car's other sources.
+Confirmed 2026-10-27 on the Fedora PC's USB adapter with the Pixel 7a: HFP and A2DP connected,
+QtCar showed the phone's player, the music played.
 
 BSA can terminate itself on the T480 Intel adapter. Its service loop restarts it, but btd keeps
 a dead BSA socket and then fails every inquiry with `Status is invalid`. The launcher's (since

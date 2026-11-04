@@ -6,6 +6,19 @@ chroot, the screen is a virtual display you see and touch over VNC. Around it: f
 data with a web panel, GPS (fixed, driving a route, or a real receiver), sound, a folder as USB
 music stick, a backup camera from any V4L2 source, and offline navigation.
 
+![The Model 3 UI (2019.20.4.2): the parked car, the map with traffic, the climate bar](docs/images/model3.png)
+
+<table>
+  <tr>
+    <td width="30%"><img src="docs/images/models.png" alt="The Model S/X center display (2026.8.3): the map and TuneIn playing"></td>
+    <td><img src="docs/images/models-cluster.png" alt="The Model S/X instrument cluster: speedometer, the car, TuneIn's now playing"></td>
+  </tr>
+  <tr>
+    <td>Model S/X center display (2026.8.3)</td>
+    <td>Model S/X instrument cluster, on its own screen</td>
+  </tr>
+</table>
+
 > **MCU2?** The Model 3's first media control unit (from its launch until about 2021): the
 > Intel Atom based one, which Tesla calls "ICE". It's not the vertical-screen MCU2 of the Model S/X,
 > and not the later AMD Ryzen MCU3. (Until 2026-09 this project called it MCU3 by mistake.)
@@ -58,6 +71,7 @@ Touch: left click / drag = finger, mouse wheel = pinch zoom, right click = long 
 | GPS: a position, a route to drive, or a real receiver | `--gps` |
 | Sound: chimes, turn signals, media, volume | `--audio` |
 | Bluetooth with the car's own stack: pairing, phone, contacts, music from the phone | `--bluetooth` |
+| Wi-Fi with the car's own stack: QtCar's Wi-Fi settings find and join networks on the PC's adapter | `--wifi` |
 | The PC's cellular modem as the car's LTE: cell icon, LTE/3G, bars, operator (sandbox-tested, no real modem yet) | `--cellular` |
 | A folder as USB stick with music | `--music DIR` |
 | Backup camera from any V4L2 device, or the PC's webcam | `--camera DEV\|auto` |

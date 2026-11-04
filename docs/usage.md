@@ -128,6 +128,8 @@ file: one per image/firmware, with `IMAGE`, `DUMP` and `SANDBOX_ROOT`.
 | | `IMAGE=./mcu2.ext4`, `CHROOT=./chroot` | the image and its mount point |
 | `--verbose`, `-v` | | QtCar's output in the terminal too |
 | `--strace "SVC ..."` | | run services under strace; traces end up in the run's log folder |
+| `--gdb "SVC"` | | run that service (or `QtCar`) interactively under gdbserver on port 8888 (debugging) |
+| `--config FILE` | | another settings file instead of `tesla.conf` (e.g. `tesla-s.conf`) |
 | `--dry-run`, `-n` | | only check and show what would start |
 | `--force`, `-f` | | start although a check failed |
 
@@ -241,10 +243,10 @@ helpers, and unmount what the start mounted (the image too, if the start mounted
 of the run follows. If a run was killed or its terminal closed, `./tesla stop` cleans up what it
 left.
 
-## The Model S firmware (experimental)
+## The Model S/X firmware
 
-A second firmware, the Model S/X MCU2's 2026.8.3, runs with its own config file (see
-[development.md](development.md#a-second-firmware) for the image): `./tesla --config tesla-s.conf
+The second firmware, the Model S/X MCU2's 2026.8.3, runs with its own config file (its dump and
+image: [setup.md](setup.md#3-the-image)): `./tesla --config tesla-s.conf
 start` shows the portrait center display (1200x1920) on VNC port 5900 and the instrument cluster
 (1920x720) on port 5901; `--native` shows the center display on this PC's screen, scaled to fit,
 and the cluster on VNC port 5901. Touch works. `--vehicle` sends the Model S/X CAN messages
