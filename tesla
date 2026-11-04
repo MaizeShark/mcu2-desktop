@@ -19,6 +19,7 @@ ${B}./tesla$R0 COMMAND [options]
                      reports; logs --list shows the runs
   config             the settings a start would use and where each comes from
   services           the firmware services that can be started (--services / SERVICES=)
+  voice [stop]       a voice command (Model 3, started with --voice): listen until a pause, or stop
   build-image [...]  create or update the patched image (patch kit + maps); build-image --help
   build-stick [...]  a bootable USB stick that starts QtCar (your own use only); build-stick --help
 
@@ -155,6 +156,13 @@ case "$cmd" in
         parse_start_opts "$@"
         cmd_config ;;
     services) load_config "$CONFIG_ARG"; cmd_services ;;
+    voice)
+        # the speech recognizer's own service call (what the steering wheel's voice button does):
+        # it listens until its speech detector hears the end of the command
+        m=startCapturing; [ "${1:-}" = stop ] && m=stopCapturing
+        curl -s --max-time 3 --http1.0 "http://127.0.0.1:4280/$m" >/dev/null ||
+            die "no speech recognizer: ./tesla start --voice (Model 3)"
+        [ $m = startCapturing ] && say "listening..." ;;
     build-image) load_config "$CONFIG_ARG"; . tools/build-image.sh; cmd_build_image "$@" ;;
     build-stick) load_config "$CONFIG_ARG"; . tools/build-stick.sh; cmd_build_stick "$@" ;;
     help|-h|--help) usage ;;

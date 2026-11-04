@@ -21,6 +21,7 @@ Features (defaults from tesla.conf):
                          QtCar's Wi-Fi settings connect the PC (NetworkManager lets go of it)
   --cellular             $(usage_wrap "this PC's modem (ModemManager; NetworkManager connects it) as the car's LTE: while the PC is online over it, QtCar shows the cell icon, network type, bars and operator (auto: when there is a modem)")
   --dns "SERVERS"|host   $(usage_wrap "the chroot's DNS servers, e.g. \"1.1.1.1 9.9.9.9\"; host (default): this PC's, followed while it runs (with --wifi: the network's while QtCar is on one)")
+  --voice                $(usage_wrap "Model 3: voice commands, recognized on this PC (whisper.cpp: voice/build-whisper.sh); the microphone with --audio. ./tesla voice starts one")
   --bluetooth            the car's Bluetooth (Broadcom stack) on this PC's adapter: phone, contacts,
                          music with --audio (BT_ADAPTER=hci0; BlueZ is stopped while it runs)
   --music DIR            DIR as a USB stick with music (Media -> USB)
@@ -95,6 +96,8 @@ parse_start_opts() {
             --wifi) set_opt WIFI 1 ;;
             --no-wifi) set_opt WIFI 0 ;;
             --cellular) set_opt CELLULAR 1 ;;
+            --voice) set_opt VOICE 1 ;;
+            --no-voice) set_opt VOICE 0 ;;
             --no-cellular) set_opt CELLULAR 0 ;;
             --dns) set_opt DNS "$2"; shift ;;
             --no-audio) set_opt AUDIO 0 ;;
@@ -168,6 +171,7 @@ parse_start_opts() {
     fi
     # the cluster needs a screen of its own: a second one on Xvfb (VNC mode, :1.1) or, natively,
     # a virtual one next to the PC's screen (Xvfb :1), both on VNC port VNC_PORT+1
+    VOICE=$(on "$VOICE")
     VEHICLE=$(on "$VEHICLE") AUDIO=$(on "$AUDIO") BLUETOOTH=$(on "$BLUETOOTH") REMOTE=$(on "$REMOTE") RESTART=$(on "$RESTART") NAV=$(on "$NAV")
 }
 
@@ -282,6 +286,7 @@ print_summary() {
     if [ "$BLUETOOTH" = 1 ]; then f="$f, bluetooth ($BT_ADAPTER)"; else off="$off bluetooth"; fi
     if [ "$WIFI" = 1 ]; then f="$f, wifi"; else off="$off wifi"; fi
     if [ "$CELLULAR" = 1 ]; then f="$f, cellular"; else off="$off cellular"; fi
+    if [ "$VOICE" = 1 ]; then f="$f, voice"; else off="$off voice"; fi
     if [ -n "$MUSIC" ]; then f="$f, music ${MUSIC/#$HOME/\~}"; else off="$off music"; fi
     if [ -n "$CAMERA" ]; then f="$f, camera $CAMERA"; else off="$off camera"; fi
     [ -n "$MITM_CERT" ] && f="$f, MITM CA ${MITM_CERT/#$HOME/\~}"
@@ -324,6 +329,7 @@ cmd_start() {
         [ "$WIFI" = 1 ] && add_service dbus wpa_supplicant connman qtcar-connman
         [ -n "$MUSIC" ] && add_service qtcar-mediaserver
         [ -n "$GPS" ] && add_service qtcar-gpsmanager
+        [ "$VOICE" = 1 ] && add_service qtcar-speechrecognizer
         print_summary "Would start (--dry-run)"
         exit 0
     fi
@@ -635,6 +641,15 @@ start_features() {
         car_opt wheelType GTW_wheelType "${VEHICLE_WHEELS:-Base19}" wheels
         car_opt performanceAddOn GTW_performanceAddOn "${VEHICLE_PERFORMANCE:-Standard}" performance
     fi
+    if [ "$VOICE" = 1 ]; then
+        if [ "$PROFILE" = 2026.8.3-models ]; then
+            # its recognizer only talks to Tesla's server (notes/voice-and-calls.md)
+            warn "voice commands: Model 3 only (the 2026 S/X recognizes them on Tesla's server)"
+            VOICE=0
+        else
+            add_service qtcar-speechrecognizer
+        fi
+    fi
     if [ "$PROFILE" = 2026.8.3-models ]; then
         # the display state machine (standby when the driver leaves, the dog screen) needs the
         # car's data: without it QtCar kept the display off and ignored touches (the kit's "false")
@@ -793,6 +808,9 @@ start_helpers() {
             sleep 2
           done ) </dev/null >"$LOG_DIR/audio.log" 2>&1 &
         add_pid $! audio
+    fi
+    if [ "$VOICE" = 1 ]; then
+        start_voice
     fi
     if [ -n "$CAMERA" ]; then
         local cw=${CAMERA_SIZE%x*} ch=${CAMERA_SIZE#*x}
@@ -1142,6 +1160,51 @@ start_viewer() {
         *) $VIEWER "vnc://127.0.0.1:$VNC_PORT" >/dev/null 2>&1 & add_pid $! viewer ;;
     esac
 
+}
+
+# Voice commands (Model 3, VOICE=1): the speech recognizer streams a command to the kit's
+# local URL (speech-local-*), voice/voice-server.py recognizes it with whisper.cpp; QtCar turns
+# the text into the command. With --audio the PC's microphone goes into AudioWeaver's mic inputs:
+# the car's three A2B mics are channels 1-3 of the 8-channel A2B capture (auc:2 = loopback
+# subdevice 2), AudioWeaver routes them to the recognizer's "voice" tplug.
+start_voice() {
+    local args=() model=$VOICE_MODEL
+    command -v ffmpeg >/dev/null || warn "voice commands: ffmpeg is missing (install it: $(pkg_install ffmpeg))"
+    [ "$model" = auto ] && model=$(for m in large-v3-turbo small base small.en base.en tiny; do
+                                       [ -s "voice/work/models/ggml-$m.bin" ] && { echo "$m"; break; }; done)
+    if [ -z "$model" ]; then
+        warn "voice commands: no whisper model (voice/build-whisper.sh), the recognizer answers \"try again\""
+        args=(--fake "")
+    else
+        args=(--model "$model")
+    fi
+    python3 voice/voice-server.py "${args[@]}" </dev/null >"$LOG_DIR/voice.log" 2>&1 &
+    add_pid $! voice-server
+    if [ "$AUDIO" = 1 ]; then
+        ( while :; do
+            rec_mono | sox -q -t raw -e signed -b 16 -c 1 -r 48000 - -t raw -e signed -b 32 -c 8 -r 48000 - \
+                remix 1 1 1 0 0 0 0 0 |
+                aplay -q -D "hw:CARD=model3,DEV=1,SUBDEV=2" -t raw -f S32_LE -c 8 -r 48000 \
+                    --period-size=192 --buffer-size=9600     # 200 ms: pw-record delivers in bursts
+            echo "tesla: microphone pipeline exited, restarting in 2 s [t=$(date +%s)]"
+            sleep 2
+          done ) </dev/null >"$LOG_DIR/microphone.log" 2>&1 &
+        add_pid $! microphone
+    else
+        warn "voice commands without --audio: no microphone, nothing to hear"
+    fi
+}
+
+# 16 bit mono 48 kHz from the PC's default microphone to stdout: PipeWire, PulseAudio or ALSA
+rec_mono() {
+    local raw=()
+    if command -v pw-record >/dev/null; then
+        pw-record --help 2>&1 | grep -q -- '--raw' && raw=(--raw)
+        pw-record "${raw[@]}" --format s16 --channels 1 --rate 48000 -
+    elif command -v parecord >/dev/null; then
+        parecord --raw --format=s16le --channels=1 --rate=48000 --latency-msec=40
+    else arecord -q -t raw -f S16_LE -c 1 -r 48000
+    fi
 }
 
 # 16 bit stereo 48 kHz from stdin to the PC's speakers: PipeWire, PulseAudio or plain ALSA

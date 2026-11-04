@@ -348,6 +348,39 @@ by AudioWeaver; on the Model S/X also Chromium web media, Browser and games thro
   TuneIn still needs its media backend. The radio needs its tuner hardware (silent here);
   Bluetooth music needs `--bluetooth` and an adapter.
 
+## Voice commands (Model 3)
+
+`--voice` (`VOICE=1`): the car's voice commands ("navigate to ...", "call ...", "play ..."),
+recognized on this PC. `./tesla voice` starts one (the recognizer listens until a pause;
+`./tesla voice stop` ends it early). With `--audio` the PC's default microphone is the car's.
+
+- Needs: whisper.cpp and a model, built once by `voice/build-whisper.sh [MODEL]` (no sudo; with
+  CUDA when the toolkit is there, `GPU=cpu` / `GPU=vulkan` otherwise), and `ffmpeg`.
+  `VOICE_MODEL` picks the model (`auto`: the largest in `voice/work/models`).
+- How: the firmware's `QtCarSpeechRecognizer` streams the command (AMR, 8 kHz) to Google's old
+  speech API, with an API key built into the firmware. The kit's `voice` patches point those URLs
+  at `voice/voice-server.py` on 127.0.0.1:8097 instead (nothing goes to Google, not even without
+  `--voice`), and let it start without internet. The server decodes the audio and hands it to
+  whisper.cpp (`whisper-server`, kept running with the model loaded). QtCar turns the text into
+  the command itself, as on the car.
+- The end of a command: the car's speech detector took the PC's background noise for speech and
+  recorded until its limit (18 s). The voice server listens along as the audio streams in and
+  answers once the speech has ended (0.8 s back at the noise floor), which ends the recording:
+  about a second after you stop talking. Nothing heard in 6 s: "try again". Tunable:
+  `voice-server.py --vad-db` (how far above the noise speech is, default 10 dB), `--vad-end-ms`.
+- The microphone: `pw-record` → channels 1-3 of the car's A2B microphone input (loopback
+  subdevice 2) → AudioWeaver → the recognizer. It records while the run lasts (the desktop shows
+  the microphone in use); only what the recognizer asks for leaves AudioWeaver.
+- Logs: `voice.log` (each command: length, text, time), `qtcar-speechrecognizer.log`,
+  `microphone.log`.
+- Tested in the sandbox (2026-11-04) with a recorded command: recognized, QtCar searched the
+  destination and showed it with Navigate/Call. On the PC (RTX 4060, large-v3-turbo with CUDA):
+  0.2-0.4 s per command; the microphone path works. Open: the steering wheel's voice button
+  (`STW_rightTop`, the right scroll wheel tilted left) reaches QtCar but didn't start a command
+  in the sandbox; `./tesla voice` starts one.
+- The Model S/X 2026 firmware recognizes commands on Tesla's server (gRPC); not supported
+  (`notes/voice-and-calls.md`).
+
 ## Bluetooth
 
 `--bluetooth` (`BLUETOOTH=1`): the car's own Bluetooth stack (Broadcom's BSA and Tesla's `btd`

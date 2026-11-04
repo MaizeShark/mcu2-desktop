@@ -5,6 +5,17 @@ TESLA_UID, shared_src(name) (the text of ../../src/<name>). Every table is optio
 """
 import os
 
+VOICE_SERVER = 'http://127.0.0.1:8097'  # voice/voice-server.py (VOICE_PORT)
+
+
+def _local_url(url):
+    """(original bytes, patched bytes) as hex: a C string URL on Google -> the same path on the
+    local voice server, NUL-padded to the original length."""
+    old = url.encode() + b'\0'
+    new = url.replace('https://www.google.com', VOICE_SERVER, 1).encode()
+    assert len(new) < len(old)
+    return old.hex(), (new + b'\0' * (len(old) - len(new))).hex()
+
 # ---------------------------------------------------------------------------
 # Binary patches: (id, group, file offset, original bytes, patched bytes, description)
 # Offsets are file offsets (== virtual addresses for these binaries).
@@ -103,6 +114,30 @@ BINARIES = [
              'SimDriveInverter::send2Hz() -> return (no DI frames from the simulator)'),
             ('sim-no-di-10hz', 'vehicle', 0x523180, '41574156', 'c3574156',
              'SimDriveInverter::send10Hz() -> return (no DI_systemStatus/DI_speed/odometer frames)'),
+        ],
+    },
+    {
+        # The speech recognizer's "google" engine streams the voice command (AMR-NB, 8 kHz) to
+        # Google's old full-duplex speech API with an API key built into the firmware, and the
+        # endpoint still answers. The URLs are fixed strings (speech_rec/google_url only sets the
+        # non-streaming v2 one): all three go to voice/voice-server.py on this PC instead
+        # (local speech recognition, ./tesla start --voice). Without it voice commands fail
+        # ("try again"); nothing goes to Google. QString::fromAscii(.., -1): the shorter,
+        # NUL-padded strings are fine.
+        'path': 'usr/tesla/UI/bin/QtCarSpeechRecognizer',
+        'sha1_orig': 'cbe9b59077552bd56e1d8d15a68084b6a0014d1b',
+        'patches': [
+            ('speech-local-up', 'voice', 0x683a78, *_local_url(
+                'https://www.google.com/speech-api/full-duplex/v1/up?lang=%1&client=%2&pair=%4&key=%5&interim'),
+             'VoiceCapturer::buildStreamingUpUrl: the audio upload -> http://127.0.0.1:8097'),
+            ('speech-local-down', 'voice', 0x683ad8, *_local_url(
+                'https://www.google.com/speech-api/full-duplex/v1/down?pair=%1&interim'),
+             'VoiceCapturer::buildStreamingDownUrl: the results -> http://127.0.0.1:8097'),
+            ('speech-local-v2', 'voice', 0x682390, *_local_url('https://www.google.com/speech-api/v2'),
+             'speech_rec/google_url default (non-streaming recognition) -> http://127.0.0.1:8097'),
+            ('speech-offline', 'voice', 0x334186, '7550', 'eb50',
+             'VRIdle::startRecognition: start even without GUI_canUseInternet (the recognition is '
+             'local; before: "VRIdle -> VRNotConnected because cannot use internet")'),
         ],
     },
     {
@@ -369,6 +404,7 @@ GROUPS = {
     'identity': '/var/etc/vin and /var/etc/birthday (only with --vin / --birthday)',
     'vehicle': 'QtCarSimService without its drive-inverter module (fake vehicle data, VEHICLE=1)',
     'audio': "asound.conf: the car's sound card on a snd-aloop card (AUDIO=1 in start_all.sh)",
+    'voice': "voice commands go to the local voice server (voice/voice-server.py), not Google",
 }
 
 

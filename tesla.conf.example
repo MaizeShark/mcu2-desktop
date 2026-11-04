@@ -56,6 +56,14 @@
 # auto = on when ModemManager has a modem. Options: --cellular, --no-cellular
 #CELLULAR=0
 
+# Voice commands (Model 3): the firmware's speech recognizer, with the recognition on this PC
+# (whisper.cpp, built by voice/build-whisper.sh; with CUDA when the toolkit is there) instead of
+# Google's server. The microphone needs AUDIO=1. Start a command with ./tesla voice. VOICE_MODEL:
+# a model in voice/work/models (large-v3-turbo, small, base, ...); auto = the largest there.
+# Options: --voice, --no-voice
+#VOICE=0
+#VOICE_MODEL=auto
+
 # The chroot's DNS servers. host = this PC's (its /etc/resolv.conf, followed while it runs: a
 # network that blocks other DNS servers, a VPN's own, the modem's); or addresses such as
 # DNS="1.1.1.1 9.9.9.9". With WIFI=1 the car's ConnMan sets the network's while QtCar is on one;

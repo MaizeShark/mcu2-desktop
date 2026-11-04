@@ -32,6 +32,10 @@ ModemManager. Sandbox-tested with a fake mmcli; also under a VPN. `DNS=host` (`t
 the chroot's resolv.conf follows the PC's instead of the fixed 8.8.8.8 (`notes/session16-*.md`).
 Session 17 (2026-11-03): `--mitm-cert` (`MITM_CERT`), a CA trusted for one run (bind-mounted
 `/etc/ssl/certs` copy + tmpfs NSS DB for CEF; `docs/mitm.md`, `notes/session17-*.md`).
+Session 18 (2026-11-04): voice commands on the Model 3 (`--voice`, `./tesla voice`): the kit points
+the speech recognizer's Google URLs at `voice/voice-server.py` (whisper.cpp, CUDA; its own end-of-speech
+detection), the PC's mic into AudioWeaver's A2B mic inputs. Calls (HFP audio) surveyed, not built:
+`notes/voice-and-calls.md`.
 
 Naming: the unit is the Model 3's **MCU2** (Intel Atom, Tesla's "ICE"), not the MCU3 (AMD).
 Until 2026-09-25 the project called it MCU3 (repo mcu3-desktop, `mcu3-*` folders); the session
@@ -69,6 +73,8 @@ kit stamp `/etc/mcu3-patchkit`, the kit's old asound.conf marker.
   ready, copied values, `--cellular`: the modem as the car's LTE), `host-dns.py` (`DNS=host`).
   Also `syslog-sink.py` (the chroot's syslog),
   `cow-apply.py` (`IMAGE_RAM`'s write-back).
+- `voice/`: `build-whisper.sh` (whisper.cpp + model into `voice/work/`, untracked), `voice-server.py`
+  (the stand-in for Google's speech API on :8097, whisper-server on :8098).
 - `bluetooth/hci-bridge.py`: the PC's adapter (HCI user channel) as the firmware's Broadcom UART
   for `--bluetooth`; `bt-watch` in start.sh restarts btd when BSA restarts itself.
 - Logs go to `logs/<time>/` (`logs/latest`, `logs/current` while running; `events.log`, `config`,
