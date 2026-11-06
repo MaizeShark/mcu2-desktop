@@ -355,6 +355,7 @@ cmd_start() {
     fi
 
     sudo_auth || exit 1
+    pick_display
     LOG_DIR=$LOGS/$(date +%Y%m%d-%H%M%S)
     mkdir -p "$LOG_DIR"
     ln -sfn "$(basename "$LOG_DIR")" "$LOGS/latest"
@@ -944,6 +945,22 @@ check_vnc() {
     local i
     for i in 1 2 3 4; do kill -0 "$1" 2>/dev/null || break; sleep 0.25; done
     kill -0 "$1" 2>/dev/null || warn "x11vnc quit: $(grep -v '^\s*$' "$2" | tail -1) (${2#"$TESLA_DIR/"})"
+}
+
+# DISPLAY_NUM: :1 or the next free one. A desktop can sit on :1 itself (a login screen on :0 and
+# the session on :1, or Xwayland), and that isn't ours to show QtCar on: x11vnc and tesla-touch
+# got no access there. An Xvfb on the number is kept, as a leftover of ours.
+pick_display() {
+    local n=${DISPLAY_NUM#:}
+    for n in $(seq "$n" 9); do
+        pgrep -a -x Xvfb | grep -Eq " :$n( |\$)" ||
+            { [ ! -e "${X11_SOCKETS:-/tmp/.X11-unix}/X$n" ] && [ ! -e "${X11_SOCKETS:-/tmp}/.X$n-lock" ]; } ||
+            continue
+        [ ":$n" = "$DISPLAY_NUM" ] || info "X display $DISPLAY_NUM is taken by something else, using :$n"
+        DISPLAY_NUM=:$n
+        return 0
+    done
+    die "no free X display between $DISPLAY_NUM and :9"
 }
 
 # the virtual screen (Xvfb :1) and x11vnc; with a cluster (Model S/X) a second screen :1.1 like
