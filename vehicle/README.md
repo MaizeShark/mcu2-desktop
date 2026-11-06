@@ -14,6 +14,8 @@ talk over UDP on loopback. Both firmwares: the Model 3's goes through Tesla's ow
 | `can-sniff.py` | shows (and decodes) the CAN-over-UDP traffic |
 | `qtcar-settings.py` | read/write the data values QtCar persists in `QtCarSettings.db` |
 
+BeamNG.drive drives these signals through the control port: [`beamng/`](../beamng/README.md).
+
 ```sh
 ./tesla start --vehicle                                    # parked car: config, battery, P, odometer
 ./tesla start --vehicle --gps "--pos 37.4419,-122.1430 --to 37.4275,-122.1697 --speedup 2"   # drive

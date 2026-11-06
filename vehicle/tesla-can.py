@@ -1286,10 +1286,11 @@ def main():
                                 snd.owner.pop(k, None)
                         after = dict(snd.values, **snd.sim.values)
                         changed = [k for k in cmd["values"] if before.get(k) != after.get(k)]
-                        if changed:
+                        if changed and not cmd.get("quiet"):    # the BeamNG bridge: 20 times a second
                             print("set: " + " ".join(fmt(sigs, k, after.get(k)) for k in changed), file=sys.stderr, flush=True)
                     elif cmd["cmd"] == "info":
                         reply["db"] = os.path.abspath(args.db)
+                        reply["car"] = CAR
                     elif cmd["cmd"] == "unset":
                         for k in cmd["names"]:
                             snd.values.pop(k, None)

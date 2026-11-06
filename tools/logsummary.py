@@ -19,7 +19,7 @@ LOGS = os.path.join(os.path.dirname(HERE), "logs")
 HELPER_LOGS = {"qtcar", "can", "gps", "audio", "audio-browser", "camera", "x11vnc", "xvfb",
                "x11vnc-cluster", "xvfb-cluster", "events", "can-db", "audio-clock",
                "bt-bridge", "browser-touch", "media-touch", "theater-touch", "theater-control",
-               "host-connectivity",
+               "host-connectivity", "beamng",
                "game-windows", "cluster", "speech-state", "syslog"}
 # service restart lines of the loops in ./tesla start (and start_all.sh before it)
 EXIT_RE = re.compile(r"^(?:tesla|start_all): (\S+) exited \((\d+)\).*?(?:\[t=(\d+)\])?$")

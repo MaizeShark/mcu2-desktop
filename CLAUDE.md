@@ -36,6 +36,9 @@ Session 18 (2026-11-04): voice commands on the Model 3 (`--voice`, `./tesla voic
 the speech recognizer's Google URLs at `voice/voice-server.py` (whisper.cpp, CUDA; its own end-of-speech
 detection), the PC's mic into AudioWeaver's A2B mic inputs. Calls (HFP audio) surveyed, not built:
 `notes/voice-and-calls.md`.
+Session 19 (2026-11-06): BeamNG.drive drives the UI (`--beamng`, `BEAMNG_BIND`, `./tesla beamng-mod`), also
+with the game on another PC: `beamng/` (a protocol mod, the bridge to tesla-can.py's control port). Tested with
+`beamng/fake-game.py` in the sandbox, and on the Model 3 in the user's game (S/X and a second PC not yet); never start the game yourself, only the user does.
 
 Naming: the unit is the Model 3's **MCU2** (Intel Atom, Tesla's "ICE"), not the MCU3 (AMD).
 Until 2026-09-25 the project called it MCU3 (repo mcu3-desktop, `mcu3-*` folders); the session
@@ -75,6 +78,8 @@ kit stamp `/etc/mcu3-patchkit`, the kit's old asound.conf marker.
   `cow-apply.py` (`IMAGE_RAM`'s write-back).
 - `voice/`: `build-whisper.sh` (whisper.cpp + model into `voice/work/`, untracked), `voice-server.py`
   (the stand-in for Google's speech API on :8097, whisper-server on :8098).
+- `beamng/`: `mod/` (the game's part, a Lua protocol module), `beamng-bridge.py` (packets -> signals through
+  tesla-can.py's control port, position -> NMEA), `install-mod.py`, `fake-game.py`, `test_bridge.py`.
 - `bluetooth/hci-bridge.py`: the PC's adapter (HCI user channel) as the firmware's Broadcom UART
   for `--bluetooth`; `bt-watch` in start.sh restarts btd when BSA restarts itself.
 - Logs go to `logs/<time>/` (`logs/latest`, `logs/current` while running; `events.log`, `config`,

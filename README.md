@@ -69,6 +69,7 @@ Touch: left click / drag = finger, mouse wheel = pinch zoom, right click = long 
 | Offline navigation: routing and turn-by-turn on OpenStreetMap tiles; address search (Google, online) | maps installed |
 | Vehicle data: battery, gear, speed, doors, locks, charging, lights, tires, telltales; the UI's buttons work; a web panel to change it all; the car's color and wheels | `--vehicle` |
 | GPS: a position, a route to drive, or a real receiver | `--gps` |
+| BeamNG.drive drives the UI: gear, speed, steering, fuel as battery, lights, doors, position, also with the game on another PC (tested with a stand-in for the game so far) | `--beamng` |
 | Sound: chimes, turn signals, media, volume | `--audio` |
 | Bluetooth with the car's own stack: pairing, phone, contacts, music from the phone | `--bluetooth` |
 | Wi-Fi with the car's own stack: QtCar's Wi-Fi settings find and join networks on the PC's adapter | `--wifi` |

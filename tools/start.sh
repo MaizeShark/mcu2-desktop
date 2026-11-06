@@ -13,6 +13,8 @@ Features (defaults from tesla.conf):
   --color C              $(usage_wrap "car color: $(look_names color) (implies --vehicle)")
   --wheels W             $(usage_wrap "$(look_names wheels) (implies --vehicle)")
   --performance P        $(usage_wrap "$(look_names performance) (implies --vehicle)")
+  --beamng               $(usage_wrap "the UI shows the car in BeamNG.drive (implies --vehicle; --gps LAT,LON: the game's world origin on the map). Install the mod: ./tesla beamng-mod")
+  --beamng-bind ADDR     $(usage_wrap "where the game's packets arrive (default 127.0.0.1); 0.0.0.0: the game runs on another PC in the network (implies --beamng)")
   --gps LAT,LON          fake GPS at a fixed position
   --gps "OPTIONS"        tesla-gps.py options: "--pos LAT,LON --to LAT,LON [--speedup 2]" drives a
                          route, "--uart /dev/ttyACM0 [--baud 9600]" passes a real receiver through
@@ -79,10 +81,13 @@ parse_start_opts() {
         opt=$1
         case "$opt" in --*=*) val=${opt#*=}; opt=${opt%%=*}; set -- "$opt" "$val" "${@:2}" ;; esac
         case "$opt" in
-            --color|--wheels|--performance|--gps|--music|--camera|--services|--size|--viewer|--config|--strace|--gdb|--touch-device|--qtcar-args|--rotate|--dns|--mitm-cert)
+            --beamng-bind|--color|--wheels|--performance|--gps|--music|--camera|--services|--size|--viewer|--config|--strace|--gdb|--touch-device|--qtcar-args|--rotate|--dns|--mitm-cert)
                 [ $# -ge 2 ] || die "$opt needs a value (./tesla start --help)" ;;
         esac
         case "$opt" in
+            --beamng) set_opt BEAMNG 1 ;;
+            --no-beamng) set_opt BEAMNG 0 ;;
+            --beamng-bind) set_opt BEAMNG_BIND "$2"; set_opt BEAMNG 1; shift ;;
             --vehicle) set_opt VEHICLE 1 ;;
             --no-vehicle) set_opt VEHICLE 0 ;;
             --color) set_opt VEHICLE_COLOR "$2"; set_opt VEHICLE 1; shift ;;
@@ -171,7 +176,15 @@ parse_start_opts() {
     fi
     # the cluster needs a screen of its own: a second one on Xvfb (VNC mode, :1.1) or, natively,
     # a virtual one next to the PC's screen (Xvfb :1), both on VNC port VNC_PORT+1
-    VOICE=$(on "$VOICE")
+    VOICE=$(on "$VOICE") BEAMNG=$(on "$BEAMNG")
+    if [ "$BEAMNG" = 1 ]; then
+        # the game drives the car and its position; GPS only says where its world's origin is
+        VEHICLE=1
+        case "$GPS" in
+            "") GPS=$BEAMNG_ANCHOR ;;
+            -*) die "--beamng takes the game's position from the game: GPS can only be LAT,LON, not \"$GPS\"" ;;
+        esac
+    fi
     VEHICLE=$(on "$VEHICLE") AUDIO=$(on "$AUDIO") BLUETOOTH=$(on "$BLUETOOTH") REMOTE=$(on "$REMOTE") RESTART=$(on "$RESTART") NAV=$(on "$NAV")
 }
 
@@ -281,7 +294,8 @@ print_summary() {
         look=$(echo $look)
         [ -n "$look" ] && f="$f ($look)"
     else off="$off vehicle"; fi
-    if [ -n "$GPS" ]; then f="$f, GPS $GPS"; else off="$off gps"; fi
+    if [ "$BEAMNG" = 1 ]; then f="$f, BeamNG.drive (world origin at $GPS)"
+    elif [ -n "$GPS" ]; then f="$f, GPS $GPS"; else off="$off gps"; fi
     if [ "$AUDIO" = 1 ]; then f="$f, audio"; else off="$off audio"; fi
     if [ "$BLUETOOTH" = 1 ]; then f="$f, bluetooth ($BT_ADAPTER)"; else off="$off bluetooth"; fi
     if [ "$WIFI" = 1 ]; then f="$f, wifi"; else off="$off wifi"; fi
@@ -294,6 +308,12 @@ print_summary() {
     info "Features  ${f#, }"
     [ -z "$off" ] || info "Off      $off  ${DIM}(./tesla start --help)$R0"
     [ "$VEHICLE" = 1 ] && info "Panel     http://localhost:$PANEL_PORT/  (doors, charging, lights, services, logs)"
+    if [ "$BEAMNG" = 1 ]; then
+        case "$BEAMNG_BIND" in
+            127.*|localhost) info "BeamNG    the game on this PC sends to $BEAMNG_BIND:$BEAMNG_PORT" ;;
+            *) info "BeamNG    the game's PC sends to $(beamng_lan_address):$BEAMNG_PORT  (./tesla beamng-mod --zip-only --target ...)" ;;
+        esac
+    fi
     info "Services  ${SERVICES:-none}"
     [ -n "${LOG_DIR:-}" ] && info "Logs      ${LOG_DIR#"$TESLA_DIR/"}/  (./tesla logs: summary)"
     return 0
@@ -854,7 +874,11 @@ start_helpers() {
     DISPLAY=$QT_DISPLAY python3 tools/game-windows.py --tidk "$CHROOT/tmp/games/cobalt/tidk" "${hide[@]}" \
         </dev/null >"$LOG_DIR/game-windows.log" 2>&1 &
     add_pid $! game-windows
-    if [ -n "$GPS" ]; then
+    if [ "$BEAMNG" = 1 ]; then
+        python3 beamng/beamng-bridge.py --listen "$BEAMNG_BIND:$BEAMNG_PORT" --anchor "$GPS" \
+            </dev/null >"$LOG_DIR/beamng.log" 2>&1 &
+        add_pid $! beamng-bridge
+    elif [ -n "$GPS" ]; then
         local gps_args
         case "$GPS" in -*) read -ra gps_args <<<"$GPS" ;; *) gps_args=(--pos "$GPS") ;; esac
         [ "$VEHICLE" = 1 ] && gps_args+=(--can)

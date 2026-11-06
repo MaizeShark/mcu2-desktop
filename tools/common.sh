@@ -52,9 +52,13 @@ pkg_install() {
 
 # --- Configuration ---------------------------------------------------------------------------
 # defaults < tesla.conf < environment < command line. CONF_SRC[var] says where a value came from.
+# BeamNG.drive: the port the mod sends to (its getPort), the origin of the game's world on the map
+BEAMNG_PORT=4444 BEAMNG_ANCHOR=37.4419,-122.1430
+# this PC's address in the network, for the game on another PC
+beamng_lan_address() { case "$BEAMNG_BIND" in 0.0.0.0|"") hostname -I 2>/dev/null | awk '{print $1}' ;; *) echo "$BEAMNG_BIND" ;; esac; }
 CONF_VARS=(VEHICLE VEHICLE_COLOR VEHICLE_WHEELS VEHICLE_PERFORMANCE GPS AUDIO AUDIO_REMIX MUSIC
            CAMERA CAMERA_DEV CAMERA_SIZE NAV SERVICES SIZE VIEWER REMOTE VNC_PORT PANEL_PORT RESTART
-           IMAGE IMAGE_RAM CHROOT DUMP SANDBOX_ROOT SCREEN NATIVE_DISPLAY NATIVE_OUTPUT ROTATE TOUCH_DEVICE QTCAR_ARGS GPU CURSOR BLUETOOTH BT_ADAPTER WIFI WIFI_ADAPTER CELLULAR DNS TIMEZONE MITM_CERT VOICE VOICE_MODEL)
+           IMAGE IMAGE_RAM CHROOT DUMP SANDBOX_ROOT SCREEN NATIVE_DISPLAY NATIVE_OUTPUT ROTATE TOUCH_DEVICE QTCAR_ARGS GPU CURSOR BLUETOOTH BT_ADAPTER WIFI WIFI_ADAPTER CELLULAR DNS TIMEZONE MITM_CERT VOICE VOICE_MODEL BEAMNG BEAMNG_BIND)
 PATH_VARS=" MUSIC IMAGE CHROOT DUMP SANDBOX_ROOT MITM_CERT "    # relative paths: to the caller's directory (env, command line)
 declare -A CONF_SRC
 
@@ -65,7 +69,7 @@ set_defaults() {
     SIZE=1920x1200 VIEWER="" REMOTE=0 VNC_PORT=5900 PANEL_PORT=8099 RESTART=1
     IMAGE=./mcu2.ext4 IMAGE_RAM=auto CHROOT=./chroot DUMP=./mcu2-original SANDBOX_ROOT=./sandbox/rootfs
     SCREEN=vnc NATIVE_DISPLAY=:0 NATIVE_OUTPUT=auto ROTATE=normal TOUCH_DEVICE=auto QTCAR_ARGS="" GPU=auto CURSOR=auto BLUETOOTH=0 BT_ADAPTER=hci0
-    WIFI=0 WIFI_ADAPTER=auto CELLULAR=0 DNS=host TIMEZONE=auto MITM_CERT="" VOICE=0 VOICE_MODEL=auto
+    WIFI=0 WIFI_ADAPTER=auto CELLULAR=0 DNS=host TIMEZONE=auto MITM_CERT="" VOICE=0 VOICE_MODEL=auto BEAMNG=0 BEAMNG_BIND=127.0.0.1
 }
 
 # abspath <path> <base dir>: ~ and relative paths resolved against the base dir

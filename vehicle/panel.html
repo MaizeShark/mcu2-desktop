@@ -223,7 +223,9 @@ async function post(body) {
 function set(obj) { return post({ values: obj }); }
 function msg(t, bad) { $("#msg").textContent = t; $("#msg").className = bad ? "bad" : ""; }
 
-// live values that a signal set by the GPS drives
+// who drives a value (the source of tesla-can.py's control messages), and the badge it gets
+const DRIVERS = { gps: "GPS", beamng: "BeamNG" };
+// live values that a signal set by the GPS or the game drives
 const LIVE_OWNER = { VAPI_shiftState: "DI_gear", VAPI_vehicleSpeed: "DI_vehicleSpeed", VAPI_odometer: "DI_odometer",
                      VAPI_driveRailOn: "SIM_driveRailOn" };
 function el(tag, props = {}, ...kids) { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; }
@@ -271,15 +273,15 @@ function renderControls(spec) {
     const s = el("section", {}, el("h2", {}, sec.title));
     if (sec.hint) s.append(el("div", { className: "hint" }, sec.hint));
     if (sec.note === "gps")
-      s.append(el("div", { className: "note", id: "gpsnote" }, "Driven by the GPS (tesla-gps.py --can): the items " +
-        "marked GPS follow the GPS position. A change here holds only until the GPS car starts or stops moving."));
+      s.append(el("div", { className: "note", id: "gpsnote" }, "The items marked GPS or BeamNG follow that source " +
+        "(tesla-gps.py --can, beamng/beamng-bridge.py). A change here holds only until the source changes that value."));
     const body = sec.layout === "tires" ? el("div", { className: "tires" }) : s;
     if (body !== s) s.append(body);
     for (const row of sec.rows) {
       const r = el("div", { className: row.label ? "row" : "chips" });
       if (row.label) {
         const l = el("label", {}, row.label);
-        if (row.owner) l.append(el("span", { className: "badge", title: "follows the GPS" }, "GPS"));
+        if (row.owner) l.append(el("span", { className: "badge" }, "GPS"));
         if (row.owner) l.lastChild.dataset.owner = row.owner;
         r.append(l);
       }
@@ -356,13 +358,14 @@ function render(s) {
     for (const el of $$("[data-only]")) el.hidden = el.dataset.only !== s.arcade;
   }
   const owners = s.owners || {};
-  let gps = false;
+  let driven = false;
   for (const b of $$("[data-owner]")) {
-    const on = owners[b.dataset.owner] === "gps";
-    b.classList.toggle("show", on);
-    gps = gps || on;
+    const by = DRIVERS[owners[b.dataset.owner]];
+    b.classList.toggle("show", !!by);
+    if (by) { b.textContent = by; b.title = "follows " + by; }
+    driven = driven || !!by;
   }
-  if ($("#gpsnote")) $("#gpsnote").classList.toggle("show", gps);
+  if ($("#gpsnote")) $("#gpsnote").classList.toggle("show", driven);
   renderRun(s.run);
   tabAvailable("run", !!s.run);
   canMarks();
@@ -372,7 +375,8 @@ function render(s) {
     const d = document.createElement("div");
     const a = document.createElement("span"), b = document.createElement("span");
     a.textContent = k.replace(/^(VAPI|HVAC|TPMS|LIGHT)_/, ""); a.title = k;
-    if (owners[LIVE_OWNER[k]] === "gps") { a.append(el("span", { className: "badge show", title: "follows the GPS" }, "GPS")); }
+    const by = DRIVERS[owners[LIVE_OWNER[k]]];
+    if (by) { a.append(el("span", { className: "badge show", title: "follows " + by }, by)); }
     b.textContent = v === null ? "–" : k === "VAPI_doorState" ? (v === "{  }" ? "all closed" : v.split("|").join(", ")) : v;
     if (b.textContent.length > 14) d.className = "long";
     if (/telltale/.test(k) && v && !/^(Off|false|<invalid>)$/.test(v)) b.className = "warn";

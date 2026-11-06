@@ -23,6 +23,7 @@
 ./tesla start                                    # the UI with navigation (if maps are installed)
 ./tesla start --vehicle                          # + a parked car, web panel
 ./tesla start --vehicle --gps 37.4419,-122.1430  # + standing in Palo Alto
+./tesla start --beamng                           # the car in BeamNG.drive
 ./tesla start --vehicle --gps "--pos 37.4419,-122.1430 --to 37.4275,-122.1697 --speedup 2"
 ./tesla start --audio --music ~/Music            # sound, a USB stick with music
 ./tesla start --camera /dev/video10              # backup camera (shown in R)
@@ -99,6 +100,8 @@ file: one per image/firmware, with `IMAGE`, `DUMP` and `SANDBOX_ROOT`.
 | `--color C` | `VEHICLE_COLOR=` | Model 3: RedMulticoat SolidBlack SilverMetallic MidnightSilver DeepBlue PearlWhite; Model S/X: Default Black White Silver Grey Blue Green Brown Pearl SigRed Red SteelGrey MetallicBlack TitaniumCopper SignatureBlue (implies `--vehicle`) |
 | `--wheels W` | `VEHICLE_WHEELS=` | Model 3: Pinwheel18 Stiletto19 Stiletto20 Stiletto20Staggered Gemini19Square Gemini19Staggered; Model S/X: Base19 Silver21 Charcoal21 Arachnid21Silver Turbine19 Tempest19SonicSilver ... (`./tesla start --help`) |
 | `--performance P` | `VEHICLE_PERFORMANCE=` | Model 3: Base Performance Ludicrous BasePlus; Model S/X: Standard Ludicrous |
+| `--beamng` / `--no-beamng` | `BEAMNG=` | the UI shows the car in BeamNG.drive (see [features.md](features.md#beamngdrive)); `./tesla beamng-mod` installs the game's part |
+| `--beamng-bind ADDR` | `BEAMNG_BIND=` | where the game's packets arrive (`127.0.0.1`; `0.0.0.0`: the game on another PC) |
 | `--gps SPEC` / `--no-gps` | `GPS=` | `LAT,LON`, or `tesla-gps.py` options (see [features.md](features.md#gps)) |
 | | `TIMEZONE=auto` | the car's clock: a time zone such as `Europe/Berlin`; auto = this PC's (the car looks it up online, which can't work here) |
 | `--audio` / `--no-audio` | `AUDIO=0` | sound |
@@ -232,7 +235,8 @@ With `--vehicle`: **http://localhost:8099/**. Tabs: **Car**, **Arcade**, **CAN s
   unset it; ☆ pins a signal to the top of the tab (remembered in the browser).
   `http://localhost:8099/#DI_gear` opens the tab with that search.
 - **GPS marks:** with `--gps`, gear, speed, drive rail and odometer follow the GPS and carry a
-  GPS badge. A change there holds until the GPS car starts or stops moving.
+  GPS badge. A change there holds until the GPS car starts or stops moving. With `--beamng` they
+  carry a BeamNG badge and hold until the game changes that value.
 - **Services and logs:** every service and helper of the run with an up/down dot and its restart
   count, links to each log file and to the run summary.
 

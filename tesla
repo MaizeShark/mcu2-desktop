@@ -20,6 +20,7 @@ ${B}./tesla$R0 COMMAND [options]
   config             the settings a start would use and where each comes from
   services           the firmware services that can be started (--services / SERVICES=)
   voice [stop]       a voice command (Model 3, started with --voice): listen until a pause, or stop
+  beamng-mod [...]   install the game's part for --beamng into BeamNG.drive; beamng-mod --help
   build-image [...]  create or update the patched image (patch kit + maps); build-image --help
   build-stick [...]  a bootable USB stick that starts QtCar (your own use only); build-stick --help
 
@@ -163,6 +164,7 @@ case "$cmd" in
         curl -s --max-time 3 --http1.0 "http://127.0.0.1:4280/$m" >/dev/null ||
             die "no speech recognizer: ./tesla start --voice (Model 3)"
         [ $m = startCapturing ] && say "listening..." ;;
+    beamng-mod) exec python3 beamng/install-mod.py "$@" ;;
     build-image) load_config "$CONFIG_ARG"; . tools/build-image.sh; cmd_build_image "$@" ;;
     build-stick) load_config "$CONFIG_ARG"; . tools/build-stick.sh; cmd_build_stick "$@" ;;
     help|-h|--help) usage ;;

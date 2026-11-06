@@ -280,6 +280,29 @@ charging, lights, outside temperature, tire pressures, telltales.
   figures on this firmware).
 - Limits: the charger values on the charging screen (A, V) are the simulator's. Details: [`vehicle/README.md`](../vehicle/README.md).
 
+## BeamNG.drive
+
+`--beamng` (`BEAMNG=1`): the UI shows the car you drive in BeamNG.drive, on both firmwares: gear, speed,
+odometer, steering (Model 3), pedals, fuel or an EV's charge as the battery, drive power, lights, turn
+signals, hazards, parking brake, doors, trunk, hood, outside temperature, tire pressures, and the
+position moves on the map.
+
+- Needs: `./tesla beamng-mod` once (start the game once before, it creates its user folder). Without
+  the mod, the game's stock OutGauge and MotionSim give a part of it.
+- How: a small mod in the game sends the state to `beamng/beamng-bridge.py`, which sets the signals
+  through tesla-can.py's control port and sends NMEA to GpsManager. `--beamng` implies `--vehicle`,
+  and replaces `tesla-gps.py`: `--gps LAT,LON` says where the game's world origin is on the map
+  (default Palo Alto; other GPS options are refused).
+- The game on another PC in the network: `./tesla beamng-mod --zip-only --target THIS_PC`, copy the zip
+  into the game's `mods/`, and `./tesla start --beamng-bind 0.0.0.0` (`BEAMNG_BIND=`). `./tesla check`
+  warns if firewalld seems to block 4444/udp.
+- The panel keeps working: a change holds until the game changes that value (BeamNG badge).
+- Logs: `beamng.log` (sender's address, connected, vehicle, game gone).
+- Limits: tested with a stand-in for the game (`beamng/fake-game.py`) and in the sandbox, not yet in the
+  game itself (`beamng/README.md` lists what to check on the first drive). Game roads don't match
+  the map's. The Model S/X has no steering angle signal. Details:
+  [`beamng/README.md`](../beamng/README.md).
+
 ## GPS
 
 `--gps SPEC` (`GPS=`):

@@ -155,7 +155,9 @@ check_image() {
 check_ports() {
     local busy p line who
     busy=$( { ss -Hltnp 2>/dev/null; ss -Hlunp 2>/dev/null; } | awk '{print $4, $NF}')
-    for p in $SERVICE_TCP_PORTS $SERVICE_UDP_PORTS $VNC_PORT $PANEL_PORT; do
+    local game=""
+    [ "$(on "$BEAMNG")" = 1 ] && game=$BEAMNG_PORT
+    for p in $SERVICE_TCP_PORTS $SERVICE_UDP_PORTS $VNC_PORT $PANEL_PORT $game; do
         line=$(grep -E "[:.]$p users:|[:.]$p \$|[:.]$p " <<<"$busy" | head -1)
         [ -n "$line" ] || continue
         who=$(grep -o '"[^"]*",pid=[0-9]*' <<<"$line" | head -1 | tr -d '"' | sed 's/,pid=/ pid /')
@@ -326,8 +328,37 @@ print(" ".join(str(ipaddress.ip_address(a)) for a in sys.argv[1].replace(",", " 
             "e.g. scrcpy --video-source=camera --v4l2-sink=$CAMERA --no-video-playback"; fi
     fi
 
+    # BEAMNG
+    if [ "$(on "$BEAMNG")" = 1 ]; then
+        local mod
+        case "$GPS" in -*) chk fail "BEAMNG=1: GPS can only be LAT,LON (the game's world origin), not \"$GPS\"" "--gps LAT,LON or --no-gps" ;; esac
+        [ "$(on "$VEHICLE")" = 1 ] || chk ok "BEAMNG=1 turns on vehicle data"
+        case "$BEAMNG_BIND" in
+            127.*|localhost)
+                if mod=$(python3 beamng/install-mod.py --find); then chk ok "BeamNG mod: $mod"
+                else chk warn "BeamNG mod not in the game's user folder here (only stock OutGauge/MotionSim then)" \
+                    "./tesla beamng-mod (start the game once first; the game on another PC: BEAMNG_BIND=0.0.0.0)"; fi ;;
+            *)
+                chk ok "BeamNG: listens on $BEAMNG_BIND:$BEAMNG_PORT, for the game on another PC" \
+                    "./tesla beamng-mod --zip-only --target $(beamng_lan_address), copy the zip to the game's mods folder"
+                if systemctl is-active -q firewalld 2>/dev/null; then
+                    # read-only; a failed query (no permission) reads as "not open": hence "may"
+                    if firewall-cmd --query-port="$BEAMNG_PORT/udp" >/dev/null 2>&1; then
+                        chk ok "firewalld lets $BEAMNG_PORT/udp in"
+                    else
+                        chk warn "firewalld may block the game's packets ($BEAMNG_PORT/udp not seen as open)" \
+                            "sudo firewall-cmd --add-port=$BEAMNG_PORT/udp   (--permanent to keep it)"
+                    fi
+                fi ;;
+        esac
+    else
+        chk off "BeamNG.drive (--beamng)"
+    fi
+
     # GPS
-    if [ -n "$GPS" ]; then
+    if [ "$(on "$BEAMNG")" = 1 ]; then
+        :   # the game's position, above
+    elif [ -n "$GPS" ]; then
         local dev
         dev=$(sed -n 's/.*--uart  *\([^ ]*\).*/\1/p' <<<"$GPS")
         if [ -n "$dev" ]; then
@@ -378,6 +409,7 @@ run_checks() {
 features_on() {
     local f=""
     [ "$(on "$VEHICLE")" = 1 ] && f="$f vehicle"
+    [ "$(on "$BEAMNG")" = 1 ] && f="$f beamng"
     [ -n "$GPS" ] && f="$f gps"
     [ "$(on "$AUDIO")" = 1 ] && f="$f audio"
     [ -n "$MUSIC" ] && f="$f music"

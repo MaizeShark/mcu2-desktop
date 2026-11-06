@@ -64,6 +64,14 @@
 #VOICE=0
 #VOICE_MODEL=auto
 
+# BeamNG.drive: the UI shows the game's car (gear, speed, steering, fuel as battery, lights, doors, ...)
+# and GPS moves it on the map, around the position in GPS (LAT,LON; default Palo Alto). Implies
+# VEHICLE=1. Install the game's part with ./tesla beamng-mod. BEAMNG_BIND: where the bridge listens,
+# 0.0.0.0 for the game on another PC in the network (beamng/README.md).
+# Options: --beamng, --no-beamng, --beamng-bind ADDR
+#BEAMNG=0
+#BEAMNG_BIND=127.0.0.1
+
 # The chroot's DNS servers. host = this PC's (its /etc/resolv.conf, followed while it runs: a
 # network that blocks other DNS servers, a VPN's own, the modem's); or addresses such as
 # DNS="1.1.1.1 9.9.9.9". With WIFI=1 the car's ConnMan sets the network's while QtCar is on one;
