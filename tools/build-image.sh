@@ -123,7 +123,11 @@ build_fresh() {
     fi
     step "New image ($SIZE_NEW)"
     command rm -f "$new"
-    truncate -s "$SIZE_NEW" "$new" && mkfs.ext4 -q -F -L mcu2 "$new" || die "mkfs failed"
+    # Debian keeps mkfs.ext4 in /sbin, which isn't on a normal user's PATH
+    local mkfs
+    mkfs=$(PATH=$PATH:/usr/sbin:/sbin command -v mkfs.ext4) ||
+        die "mkfs.ext4 not found: install e2fsprogs (see docs/setup.md)"
+    truncate -s "$SIZE_NEW" "$new" && "$mkfs" -q -F -L mcu2 "$new" || die "mkfs failed"
     mnt=$(mktemp -d)
     sudo mount -o loop "$new" "$mnt" || die "couldn't mount $new"
     trap 'sudo umount "$mnt" 2>/dev/null; rmdir "$mnt"' EXIT

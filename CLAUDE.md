@@ -38,7 +38,7 @@ detection), the PC's mic into AudioWeaver's A2B mic inputs. Calls (HFP audio) su
 `notes/voice-and-calls.md`.
 Session 19 (2026-11-06): BeamNG.drive drives the UI (`--beamng`, `BEAMNG_BIND`, `./tesla beamng-mod`), also
 with the game on another PC: `beamng/` (a protocol mod, the bridge to tesla-can.py's control port). Tested with
-`beamng/fake-game.py` in the sandbox, and on the Model 3 in the user's game (S/X and a second PC not yet); never start the game yourself, only the user does.
+`beamng/fake-game.py` in the sandbox, on the Model 3 in the user's game, and over Wi-Fi with fake-game.py on a phone (S/X and the game itself on a second PC not yet); never start the game yourself, only the user does.
 
 Naming: the unit is the Model 3's **MCU2** (Intel Atom, Tesla's "ICE"), not the MCU3 (AMD).
 Until 2026-09-25 the project called it MCU3 (repo mcu3-desktop, `mcu3-*` folders); the session

@@ -120,14 +120,13 @@ beamng/fake-game.py [--target ADDR:4444] [--stock]      # with tesla-can.py and 
 `test_bridge.py` checks each signal name and enum label against both firmware databases: an unknown
 name makes tesla-can.py drop the rest of a message.
 
-## Not tested in the game yet
+## Still to check in the game
 
-None of this has run against the real game, only against `fake-game.py` and stubs of its Lua. To
-check on the first drive:
+The mod and the bridge have run with the real game on the Model 3: the install, speed, and the mod
+sending to a network address (`--target`, bridge on 0.0.0.0). `fake-game.py` on a phone reached the
+bridge over Wi-Fi. Not yet: the game itself on a second PC, which means the zip install there and
+that PC's firewall. Not confirmed yet:
 
-- `./tesla beamng-mod` finds the user folder, and the mod activates by itself (`mods/db.json`).
-  The folder names are from the binary's strings and the docs, not from a seen install.
-- `beamng.log` in the user folder shows no error from `maizeshark_teslamcu`.
 - Steering turns the right way: negated because `electrics.lua` treats steering > 0 as left.
 - The heading on the map matches the game's compass: +Y = north is inferred from the game's navigation code.
 - Doors, trunk, hood on other vehicles (names read from etk800 and covet).
