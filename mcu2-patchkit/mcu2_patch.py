@@ -9,6 +9,7 @@ rootfs (usr/tesla/UI/bin/customerVersion.txt and UI_PLATFORM in etc/RunQtCar.env
 
   profiles/2019.20.4.2-model3   Model 3: 5 byte patches, Mesa 18, CEF shims, audio, ...
   profiles/2026.8.3-models      Model S/X: Mesa 25 with llvmpipe (Debian 13)
+  profiles/2025.20.6-models     Model S/X, older: the 2026 tables with its own patches and payload
 
 Usage:
   sudo python3 mcu2_patch.py /path/to/rootfs              # apply everything
@@ -99,7 +100,7 @@ def load_profile(name):
     defaults = {'BINARIES': [], 'PAYLOAD_FILES': [], 'RETIRED_FILES': [], 'SYMLINKS': [], 'DIR_MODES': [],
                 'DIRECTORIES': [], 'EMPTY_FILES': [], 'SETTINGS_KEYS': {}, 'SETTINGS_FILES': [],
                 'TEXT_FILES': [], 'ASOUND_BLOCK': None, 'ASOUND_AWE': None, 'GROUPS': {}, 'BUILDABLE': {},
-                'GLIBC': None,
+                'GLIBC': None, 'BASE_DIR': None,
                 'TESLA_SHELL': True, 'KEEP_BINARY': {}}
     for k, v in defaults.items():
         if not hasattr(mod, k):
@@ -620,9 +621,10 @@ OLD_STAMP = 'etc/mcu3-patchkit'   # kits before 2026-09-25 (the unit was called 
 def kit_version():
     h = hashlib.sha1()
     files = [os.path.abspath(__file__)] + sorted(os.path.join(SHARED_SRC, f) for f in os.listdir(SHARED_SRC))
-    for d, dirs, names in sorted(os.walk(P.PROFILE_DIR)):
-        dirs[:] = sorted(x for x in dirs if x != '__pycache__')
-        files += sorted(os.path.join(d, n) for n in names if n != 'sources.toml')
+    for top in filter(None, (P.BASE_DIR, P.PROFILE_DIR)):    # BASE_DIR: the profile whose tables it uses
+        for d, dirs, names in sorted(os.walk(top)):
+            dirs[:] = sorted(x for x in dirs if x != '__pycache__')
+            files += sorted(os.path.join(d, n) for n in names if n != 'sources.toml')
     for path in files:
         h.update(os.path.relpath(path, KIT).encode() + b'\0')
         with open(path, 'rb') as f:
@@ -733,7 +735,7 @@ def main():
         name = args.profile or (detect_profile(root) if root else LEGACY_PROFILE)
         m = profile_meta(name)
         d, scr, feat = m.get('detect', {}), m.get('screen', {}), m.get('features', {})
-        print(f"profile={name}\ncar={d.get('car', '')}\ncenter={scr.get('center', '')}\n"
+        print(f"profile={name}\ncar={d.get('car', '')}\ncan_db={d.get('can_db', '')}\ncenter={scr.get('center', '')}\n"
               f"cluster={scr.get('cluster', '')}\nmit_shm={str(scr.get('mit_shm', True)).lower()}\n"
               f"maps={str(feat.get('maps', False)).lower()}\nservices={' '.join(m.get('services', {}).get('base', []))}")
         return 0

@@ -342,7 +342,7 @@ cmd_start() {
             if [ "$(can_db)" = vehicle/work/can-db.json ]; then add_service qtcar-sim qtcar-vehicle; else add_service qtcar-vehicle; fi
         fi
         if [ "$AUDIO" = 1 ]; then
-            if [ "$PROFILE" = 2026.8.3-models ]; then add_service audiod qtcar-audiod qtcar-mediaserver
+            if is_sx; then add_service audiod qtcar-audiod qtcar-mediaserver
             else add_service audioweaver audiod qtcar-audiod qtcar-mediaserver; fi
         fi
         [ "$BLUETOOTH" = 1 ] && add_service dbus bsa_server btd qtcar-bluetooth
@@ -454,7 +454,7 @@ EOF
     step "Services"
     # A previous Theater selection must not become Chromium's startup page on
     # the next run. QtCar writes a fresh URL when the user selects a source.
-    if [ "$PROFILE" = 2026.8.3-models ]; then
+    if is_sx; then
         sudo rm -f "$CHROOT/run/chromium/policies/chromium-fullscreen/10-homepage.json"
     fi
     SERVICES=$(echo $SERVICES)
@@ -495,7 +495,7 @@ EOF
         [ "$svc" = bsa_server ] && [ "$BLUETOOTH" = 1 ] && start_bluetooth_watch
     done
     sleep 1
-    if [ "$PROFILE" = 2026.8.3-models ]; then
+    if is_sx; then
         # QtCar only discovers Theater's X window at startup. Wait until the
         # persistent blank Chromium page exists before starting QtCar.
         for _ in $(seq 100); do
@@ -663,7 +663,7 @@ start_features() {
         car_opt performanceAddOn GTW_performanceAddOn "${VEHICLE_PERFORMANCE:-Standard}" performance
     fi
     if [ "$VOICE" = 1 ]; then
-        if [ "$PROFILE" = 2026.8.3-models ]; then
+        if is_sx; then
             # its recognizer only talks to Tesla's server (notes/voice-and-calls.md)
             warn "voice commands: Model 3 only (the 2026 S/X recognizes them on Tesla's server)"
             VOICE=0
@@ -671,7 +671,7 @@ start_features() {
             add_service qtcar-speechrecognizer
         fi
     fi
-    if [ "$PROFILE" = 2026.8.3-models ]; then
+    if is_sx; then
         # the display state machine (standby when the driver leaves, the dog screen) needs the
         # car's data: without it QtCar kept the display off and ignored touches (the kit's "false")
         settings_conf display_state "enable_display_state_manager=$([ "$VEHICLE" = 1 ] && echo true || echo false)"
@@ -690,7 +690,7 @@ start_features() {
         fi
         sudo mkdir -p "$CHROOT/dev/snd" && sudo mount --bind /dev/snd "$CHROOT/dev/snd"
         snd_acl
-        if [ "$PROFILE" = 2026.8.3-models ]; then add_service audiod qtcar-audiod qtcar-mediaserver
+        if is_sx; then add_service audiod qtcar-audiod qtcar-mediaserver
         else add_service audioweaver audiod qtcar-audiod qtcar-mediaserver; fi
         audio_clock
     fi
@@ -715,7 +715,7 @@ start_features() {
         # the media server finds them there ([usb] media_path, kit) and indexes them. The 2026 S/X
         # looks in /mnt/media/usb-* (where its mounterd mounts them; [usb] media_path doesn't apply)
         local usb=/home/tesla/media/usb-music
-        [ "$PROFILE" = 2026.8.3-models ] && usb=/mnt/media/usb-music
+        is_sx && usb=/mnt/media/usb-music
         sudo mkdir -p "$CHROOT$usb" && sudo mount --bind -o ro "$MUSIC" "$CHROOT$usb"
         add_service qtcar-mediaserver
     fi
@@ -731,12 +731,36 @@ start_features() {
         sudo python3 vehicle/qtcar-settings.py --owner "$ids" \
             "$CHROOT/home/tesla/.Tesla/data/QtCarSettings.db" GUI_smoothGPSUpdates=false \
             -d LocationManagerDataStorage >/dev/null
+        # Routes start at TMServer's INAV_vehicleLocation. It keeps the stored value (without one,
+        # the firmware's default near Palo Alto) until the car has moved 30 m, so it needs the
+        # position now. tesla-gps.py's RawGpsKeeper does the same for GpsManager's estimate.
+        local start_pos
+        start_pos=$(gps_start_point)
+        if [ -n "$start_pos" ]; then
+            sudo python3 vehicle/qtcar-settings.py --owner "$ids" \
+                "$CHROOT/home/tesla/.Tesla/data/TMServerSettings.db" \
+                --location "INAV_vehicleLocation=$start_pos" >/dev/null
+        fi
     fi
 }
 
 # after the services: the host-side helpers
+# gps_start_point: LAT,LON where --gps starts (empty for a GPX track or a serial receiver: they
+# report their own position soon enough)
+gps_start_point() {
+    local words i
+    case "$GPS" in -*) ;; *) echo "$GPS"; return ;; esac
+    read -ra words <<<"$GPS"
+    for ((i = 0; i < ${#words[@]} - 1; i++)); do
+        case "${words[i]}" in
+            --pos) echo "${words[i + 1]}"; return ;;
+            --path) echo "${words[i + 1]//[\"\']/}"; return ;;
+        esac
+    done
+}
+
 start_helpers() {
-    if [ "$PROFILE" = 2026.8.3-models ]; then
+    if is_sx; then
         # The offscreen media web view misses native and VNC touchscreen events.
         # Forward them through its localhost DevTools socket. The standalone Browser
         # needs X11 events so its toolbar receives taps as well as page content.
@@ -755,7 +779,7 @@ start_helpers() {
             </dev/null >"$LOG_DIR/theater-control.log" 2>&1 &
         add_pid $! theater-control
     fi
-    if [ "$PROFILE" = 2026.8.3-models ]; then
+    if is_sx; then
         # This firmware normally gets CONN_/LINK_ data values from the car's ConnMan. The
         # chroot shares the host network instead; feed its reachability into QtCar's normal
         # data-value path (which also controls media). With --wifi, QtCarConnMan owns these values.
@@ -794,7 +818,7 @@ start_helpers() {
         # QtCar ignores volume changes while SPEECH_voiceRecGUIState is invalid ("Delaying volume
         # change"); the speech recognizer, not running here, would set it. Keep it at Inactive.
         # (Model 3: the S/X QtCar has no HTTP data values, its :4220 is the Spotify client's)
-        if [ "$PROFILE" != 2026.8.3-models ]; then
+        if ! is_sx; then
             ( while :; do
                 v=$(curl -s --max-time 2 --http1.0 "http://127.0.0.1:4220/_data_get_value_request_?name=SPEECH_voiceRecGUIState")
                 [ "$v" = "<invalid>" ] && curl -s --max-time 2 --http1.0 \
@@ -809,14 +833,14 @@ start_helpers() {
         # M, 9-16 = amp S. Its speakers (test tones, sandbox; the base audio type): left M4 + S4,
         # right M2 + M6, center M8; the odd channels stay silent.
         local remix=$AUDIO_REMIX
-        [ "$PROFILE" = 2026.8.3-models ] && [ "${CONF_SRC[AUDIO_REMIX]}" = default ] &&
+        is_sx && [ "${CONF_SRC[AUDIO_REMIX]}" = default ] &&
             remix="4v0.5,12v0.5,8v0.35 2v0.5,6v0.5,8v0.35"
         amp() {
             arecord -q -D "hw:CARD=model3,DEV=1,SUBDEV=$1" -f S32_LE -c 8 -r 48000 -t raw \
                 --period-size=192 --buffer-size=3072
         }
         ( while :; do
-            if [ "$PROFILE" = 2026.8.3-models ]; then
+            if is_sx; then
                 # +18 dB with a limiter: the amplifier outputs are quiet (a half-scale tone at UI volume
                 # 38 %: -36 dBFS, 100 %: -6), and with the UI turned up to compensate the media drowned
                 # the chimes, which play at fixed levels (lock 0.01, turn signal 0.007; tick -42 dBFS)
@@ -1354,7 +1378,7 @@ start_bluetooth() {
     # Keep an override for diagnosing other adapters or stack revisions.
     local emulate_vendor=${BT_EMULATE_VENDOR_SUCCESS:-auto}
     if [ "$emulate_vendor" = auto ]; then
-        [ "$PROFILE" = 2026.8.3-models ] && emulate_vendor=1 || emulate_vendor=0
+        is_sx && emulate_vendor=1 || emulate_vendor=0
     fi
     [ "$emulate_vendor" = 1 ] && bridge_args+=(--emulate-vendor-success)
     sudo python3 bluetooth/hci-bridge.py --dev "$dev" --link "$LOG_DIR/bt-tty" "${bridge_args[@]}" >"$LOG_DIR/bt-bridge.log" 2>&1 &
@@ -1364,7 +1388,7 @@ start_bluetooth() {
     [ -n "$tty" ] || { warn "the Bluetooth bridge didn't start, see bt-bridge.log"; BLUETOOTH=0; return; }
     sudo touch "$CHROOT/dev/ttyS0" && sudo mount --bind "$tty" "$CHROOT/dev/ttyS0"
     add_service dbus bsa_server btd qtcar-bluetooth
-    [ "$AUDIO" = 1 ] && [ "$PROFILE" != 2026.8.3-models ] && add_service a2dpbridge
+    [ "$AUDIO" = 1 ] && ! is_sx && add_service a2dpbridge
 }
 
 # The BSA server (both firmwares) can terminate itself after a controller reset and the

@@ -18,7 +18,7 @@ Routes (--to) are calculated with the firmware's own valhalla_client on the inst
 speeds by default, or --speed km/h; --speedup multiplies time. At the end it stays at the last
 point (or starts over with --loop).
 """
-import argparse, datetime, json, math, os, socket, subprocess, sys, termios, threading, time, tty
+import argparse, datetime, json, math, os, re, socket, subprocess, sys, termios, threading, time, tty
 import xml.etree.ElementTree as ET
 
 HERE = os.path.dirname(os.path.realpath(__file__))
@@ -89,16 +89,35 @@ def length(data):
     return 1 << 30
 
 
+def parse_location(text):
+    """A location data value, "(37.441900 N, 122.143000 W)", as (lat, lon); None if it isn't one."""
+    m = re.match(r"\(([\d.]+) ([NS]), ([\d.]+) ([EW])\)", text or "")
+    if not m:
+        return None
+    return (float(m[1]) * (1 if m[2] == "N" else -1), float(m[3]) * (1 if m[4] == "E" else -1))
+
+
 class RawGpsKeeper:
-    """Keep GpsManager's LOC_estimatedGPSValid false, so QtCar shows the raw GPS position.
+    """Keep GpsManager's position estimate on the GPS position, and QtCar on the raw one.
+
+    QtCar has two positions. The car's arrow is the raw LOC_geoLocation (with the flag below false),
+    navigation (NavRouteManager, TMServer, LocationManager) always uses GpsManager's estimate
+    LOC_estimatedLocation. The estimator only takes GPS while the car reports speed, and starts at a
+    default compiled into the firmware (37.394287,-122.150604, Tesla's old HQ in Palo Alto), so a parked car had
+    its arrow at --pos and its routes starting from there. One update with a speed set in GpsManager
+    alone moves the estimate: the vehicle service and QtCar don't see it, and the vehicle service's
+    next value puts the speed back.
 
     GpsManager's estimator sets LOC_estimatedGPSValid=true whenever it starts, and QtCar then shows
-    the estimate (which doesn't follow GPS without vehicle speed) even with GUI_smoothGPSUpdates=false.
-    It only resets the flag when LOC_enableSmoothGPSUpdates changes, which doesn't happen when that
-    setting is already stored as false. QtCar also stores the flag in its settings DB.
+    the estimate even with GUI_smoothGPSUpdates=false. It only resets the flag when
+    LOC_enableSmoothGPSUpdates changes, which doesn't happen when that setting is already stored as
+    false. QtCar also stores the flag in its settings DB.
     The 2026 S/X QtCar has no HTTP data values (its :4220 is the Spotify client's, which logs
     "Invalid method name"): only GpsManager there."""
     PORTS = (4160, 4220)    # GpsManager, QtCar (which keeps its own copy of the flag)
+    GPS = 4160
+    MAX_OFF = 25.0          # metres between estimate and GPS that are left alone
+    PULSE_SPEED = "0.5"
 
     def __init__(self, ports=PORTS):
         self.ports = ports
@@ -106,11 +125,34 @@ class RawGpsKeeper:
     def start(self):
         threading.Thread(target=self.run, daemon=True).start()
 
+    def get(self, name, port=GPS):
+        return dv_request(port, "_data_get_value_request_?name=" + name, 5)
+
+    def set(self, name, value, port=GPS):
+        dv_request(port, "_data_set_value_request_?name=%s&value=%s" % (name, value), 5)
+
+    def follow_gps(self):
+        """Pulse the speed when the estimate is off and the car stands (while it drives, the real
+        speed moves the estimate, and that value isn't ours to overwrite)."""
+        geo = parse_location(self.get("LOC_geoLocation"))
+        est = parse_location(self.get("LOC_estimatedLocation"))
+        if not geo or not est or distance(geo, est) <= self.MAX_OFF:
+            return
+        try:
+            if float(self.get("VAPI_vehicleSpeed") or 0):
+                return
+        except ValueError:
+            pass
+        self.set("VAPI_vehicleSpeed", self.PULSE_SPEED)
+        time.sleep(0.5)
+        self.set("VAPI_vehicleSpeed", "0")
+
     def run(self):
         while True:
+            self.follow_gps()
             for port in self.ports:
-                if dv_request(port, "_data_get_value_request_?name=LOC_estimatedGPSValid", 5) == "true":
-                    dv_request(port, "_data_set_value_request_?name=LOC_estimatedGPSValid&value=false", 5)
+                if self.get("LOC_estimatedGPSValid", port) == "true":
+                    self.set("LOC_estimatedGPSValid", "false", port)
             time.sleep(2)
 
 

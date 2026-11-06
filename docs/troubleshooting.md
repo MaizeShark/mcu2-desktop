@@ -23,6 +23,9 @@ it). `config` in there shows the settings used. For a service that hangs or beha
 | `the image is mounted at X, not at chroot/` | it's mounted elsewhere (by hand, or an old mount point); mounting it twice would corrupt it. `sudo umount X` |
 | `couldn't unmount chroot/, it's busy` | the list below it shows who holds it (a shell inside it, a file indexer, ...); stop that, then `sudo umount chroot` |
 | `the image was patched by another kit version` | `./tesla build-image` (after a `git pull`) |
+| Browser or Theater ignores touches | `xwininfo` is missing on the PC (`logs/latest/browser-touch.log`; `./tesla check` warns) |
+| Routes start somewhere other than the car's arrow | the arrow is `--gps`; a route's start is only set from `--gps` with a fixed start (`LAT,LON`, `--pos`, `--path`) at `./tesla start`, otherwise after the car has moved 30 m |
+| TuneIn is silent, other sounds work | `logs/latest/chromium-app.log`: `Unknown PCM` = the image needs `./tesla build-image` |
 | Media -> USB stays at "Loading..." | the audio services didn't come up (`./tesla status`); with a kit before 2026-09-24 they waited 50 s for the car's gateway: `./tesla build-image` |
 | No sound | the `pw-play` stream on another output than you listen to (`wpctl status`, Streams; `./tesla start` sends it to the default output at the start, a later change of the default doesn't move it: pavucontrol); `./tesla logs` (pump errors? audio services without output?); `snd-aloop` loaded without `id=model3`: `sudo modprobe -r snd-aloop` and start again |
 | Sound stutters / mostly silent | `./tesla logs` shows many pump errors: the loopback card is taken by PulseAudio/PipeWire (install `tools/99-tesla-sound.rules`, then reload snd-aloop), or the kernel tick is coarse and the high-resolution clock didn't come up (`audio-clock.log`) |

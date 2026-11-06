@@ -10,8 +10,10 @@ import ctypes
 import errno
 import os
 import re
+import shutil
 import struct
 import subprocess
+import sys
 
 
 EVENT = struct.Struct("llHHi")
@@ -101,6 +103,9 @@ def geometry(path):
 
 
 def run(root, display, title, geometry_file):
+    if not shutil.which("xwininfo"):
+        sys.exit("browser-touch: xwininfo is missing, touches can't reach the browser window; install it "
+                 "(Fedora: xwininfo, Debian: x11-utils)")
     x11 = BrowserWindow(display, title)
     device = os.path.join(root, "dev/input/touch")
     geometry_path = os.path.join(root, "opt/games/run/i2v", geometry_file)

@@ -1,7 +1,8 @@
 # mcu2-desktop
 
 Runs the Tesla touchscreen UI (QtCar) of the **MCU2** on a Linux PC: the Model 3's (firmware
-2019.20.4.2) and the Model S/X's (2026.8.3, with its instrument cluster). The firmware runs in a
+2019.20.4.2) and the Model S/X's (2026.8.3, with its instrument cluster; the older 2025.20.6 is
+sandbox-tested). The firmware runs in a
 chroot, the screen is a virtual display you see and touch over VNC. Around it: fake vehicle
 data with a web panel, GPS (fixed, driving a route, or a real receiver), sound, a folder as USB
 music stick, a backup camera from any V4L2 source, and offline navigation.
@@ -46,7 +47,7 @@ music stick, a backup camera from any V4L2 source, and offline navigation.
 ```sh
 # once (details and Fedora: docs/setup.md)
 sudo apt install xvfb x11vnc x11-utils curl python3 e2fsprogs cargo krdc
-#   Fedora: sudo dnf install xorg-x11-server-Xvfb x11vnc xdpyinfo curl python3 e2fsprogs cargo krdc
+#   Fedora: sudo dnf install xorg-x11-server-Xvfb x11vnc xdpyinfo xwininfo curl python3 e2fsprogs cargo krdc
 (cd tesla-touch && cargo build --release)
 sudo cp tesla-touch/99-tesla-touch.rules /etc/udev/rules.d/ && sudo udevadm control --reload
 ./tesla build-image --fresh           # your firmware dump in mcu2-original/ -> mcu2.ext4

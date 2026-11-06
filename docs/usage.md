@@ -60,6 +60,7 @@ down from the top handle to return to Theater. See
 [features.md](features.md#model-sx-theater-202683) for the tile-by-tile results.
 
 On native displays, the media touch bridge is also needed for taps in TuneIn's lower web area.
+Browser and Theater touches need `xwininfo` on the PC (`./tesla check` warns).
 If Browser or a music source does not respond, check `logs/latest/browser-touch.log` or
 `logs/latest/media-touch.log` along with the corresponding Chromium service log. Native Browser
 and its on-screen keyboard were tested on the T480. VNC rendering can remain slow with software graphics even when
@@ -249,7 +250,8 @@ left.
 
 ## The Model S/X firmware
 
-The second firmware, the Model S/X MCU2's 2026.8.3, runs with its own config file (its dump and
+The second firmware, the Model S/X MCU2's 2026.8.3 (or the older 2025.20.6, `tesla-s2025.conf`, not
+yet tried in a real start), runs with its own config file (its dump and
 image: [setup.md](setup.md#3-the-image)): `./tesla --config tesla-s.conf
 start` shows the portrait center display (1200x1920) on VNC port 5900 and the instrument cluster
 (1920x720) on port 5901; `--native` shows the center display on this PC's screen, scaled to fit,

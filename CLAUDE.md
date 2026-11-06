@@ -39,6 +39,7 @@ detection), the PC's mic into AudioWeaver's A2B mic inputs. Calls (HFP audio) su
 Session 19 (2026-11-06): BeamNG.drive drives the UI (`--beamng`, `BEAMNG_BIND`, `./tesla beamng-mod`), also
 with the game on another PC: `beamng/` (a protocol mod, the bridge to tesla-can.py's control port). Tested with
 `beamng/fake-game.py` in the sandbox, on the Model 3 in the user's game, and over Wi-Fi with fake-game.py on a phone (S/X and the game itself on a second PC not yet); never start the game yourself, only the user does.
+Session 20 (2026-11-06): the older S/X firmware 2025.20.6 (`profiles/2025.20.6-models/`, on top of the 2026 tables; `tesla-s2025.conf`, `mcu2s-2025-original/`, `sandbox/rootfs-s2025/`): runs in the real chroot; navigation's position (all firmwares), TuneIn and Browser touch fixed after the first run (`notes/session20-*.md`).
 
 Naming: the unit is the Model 3's **MCU2** (Intel Atom, Tesla's "ICE"), not the MCU3 (AMD).
 Until 2026-09-25 the project called it MCU3 (repo mcu3-desktop, `mcu3-*` folders); the session
@@ -61,6 +62,7 @@ kit stamp `/etc/mcu3-patchkit`, the kit's old asound.conf marker.
   partition as delivered), `mcu2s-original/` (pristine, root-owned), `sandbox/rootfs-s/` (user
   copy), `tesla-s.conf` (`IMAGE=./mcu2s.ext4`, `DUMP=`, `SANDBOX_ROOT=`): `./tesla --config
   tesla-s.conf ...`. Never commit or share any of it.
+- The older S/X firmware 2025.20.6: `firmware/2025.20.6-models/`, `mcu2s-2025-original/`, `sandbox/rootfs-s2025/`, `tesla-s2025.conf`, `mcu2s2025.ext4`. The other files in that firmware folder are BIOS images and MCU1 (Tegra) dumps: unused and private. Never commit or share any of it. S/X checks in `tools/` use `is_sx`, not a profile name.
 - `tesla-touch/`: Rust mouse→multitouch bridge (`cargo build --release`).
 - `navigation/`: Valhalla 2.4.3 podman image, `build-tiles.sh`, `install-maps.sh`.
 - `vehicle/`: fake GPS (`tesla-gps.py`) and vehicle data (`tesla-can.py`, CAN signal DB from the
@@ -177,6 +179,7 @@ podman run --rm --timeout 20 --network host -e QCSVC_NOUSER=1 --rootfs $PWD/sand
   `./tesla start` (it refuses to start while the ports are taken). A chroot service that ignores
   SIGTERM (a GpsManager did) keeps its ports; `./tesla start`/`stop` SIGKILL leftovers.
   "Failed to listen on port ..." in a service log = check this.
+- Three positions: the arrow is raw GPS `LOC_geoLocation`, GpsManager's `LOC_estimatedLocation` only follows GPS with speed, routes start at TMServer's `NAV_vehicleLocation` (stored as `INAV_vehicleLocation`, moves after 30 m). A parked car needs `RawGpsKeeper` and the seed in `start.sh`.
 - Shell: zsh with aliases (`rm -i`, `cp -i`, `t`). Use `command rm/cp`, and don't use `pkill -f`
   with patterns that match your own command line (same for `grep` over `/proc/*/cmdline`: use
   `'na[m]e'`). `grep` is ugrep.

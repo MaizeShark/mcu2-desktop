@@ -44,7 +44,11 @@ DISPLAY=:97 xdotool mousemove 858 203 click 1                     # tap (with --
 
 Another firmware's copy: `./sandbox.sh --root sandbox/rootfs-s` (or `SANDBOX_ROOT`); its kit
 profile sets the screens (the Model S: 1200x1920 plus the cluster on `:97.1`, QtCarCluster as a
-second process), output in `sandbox/out-rootfs-s/`.
+second process), output in `sandbox/out-rootfs-s/`. For vehicle data in an S/X copy, start
+`dbus qtcar-startup qtcar-dvserver qtcar-vehicle` (qtcar-startup creates `/tmp/dvaccess` and the shared
+memory) with `tesla-can.py --db vehicle/work/can-db-models.json --all-zero --respond` on the host;
+the profile's own database for 2025.20.6 (`can-db-models-2025.json`). `sandbox.sh` adds a sandbox-only D-Bus
+policy to S/X copies (everything runs as root there).
 
 QtCar runs under the host's gdb there (a crash leaves a backtrace in `sandbox/out/qtcar.log`),
 with the browser skipped unless `--browser` (the escalator is missing). `--audio`, `--video`,
@@ -92,6 +96,10 @@ EOF
 unsquashfs -no-xattrs -d sandbox/rootfs-s firmware/2026.8.3-models/2026.8.3.mcu2   # as your user
 ./tesla --config tesla-s.conf build-image --sandbox
 ```
+
+A new firmware version: a folder in `mcu2-patchkit/profiles/`. `profiles/2025.20.6-models/kit.py` shows the
+short way when the architecture is the same: run the other profile's tables (`BASE_DIR`), replace patch
+offsets and payload. `can_db` in `profile.toml` gives it its own CAN database if messages differ.
 
 ## Conventions
 

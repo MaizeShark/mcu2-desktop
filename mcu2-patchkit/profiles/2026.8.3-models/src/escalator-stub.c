@@ -5,6 +5,8 @@
  * Protocol (libescalator / QEscalator): the client connects to the Unix socket /tmp/escalator and
  * sends 0xff, u32 command length, u32 input length (host order), the command ("[detached ]name
  * args...") and the input. Unless detached, it reads u32 exit code, u32 output length, the output.
+ * Firmware 2025.20.6 (profile 2025.20.6-models uses this file too): the bare command in one send(),
+ * no 0xff, no lengths, no input; the same reply.
  *
  * Table: the display checks get "ok" answers (QtCar runs --emulated and shouldn't ask, but
  * they're harmless); start-/stop- of the videos and games go to the chroot's /sbin/sv wrapper
@@ -25,6 +27,7 @@
 
 #define SOCKET_PATH "/tmp/escalator"
 #define MAX_REQUEST (1 << 20)
+#define BARE_REQUEST 65536
 
 static void logf_(const char *fmt, const char *a, const char *b)
 {
@@ -109,7 +112,7 @@ static const struct { const char *name, *job; } APPS[] = {
 static const char *const QUIET_OK[] = {
     "drm-status-detect", "CLUSTER_POWER", "cluster-power", "pwm-duty-cycle", "pwm-duty-cycle-gen3",
 };
-static const char *const OK[] = {"start-tesla-chromium-app", "start-valhalla",
+static const char *const OK[] = {"start-tesla-chromium-app", "stop-tesla-chromium", "start-valhalla",
     /* the car pins CPUs and pauses services for a game; QtCar exits when this fails */
     "start-game-mode", "stop-game-mode"};
 
@@ -163,17 +166,31 @@ static void serve(int fd)
 {
     unsigned char magic;
     uint32_t hdr[2];
-    if (read_all(fd, &magic, 1) || magic != 0xff || read_all(fd, hdr, sizeof hdr) ||
-        hdr[0] == 0 || hdr[0] > MAX_REQUEST || hdr[1] > MAX_REQUEST) {
+    char *cmd, *input = NULL;
+    if (read_all(fd, &magic, 1)) {
         logf_("bad request header%s%s", "", "");
         return;
     }
-    char *cmd = calloc(1, hdr[0] + 1);
-    char *input = hdr[1] ? malloc(hdr[1]) : NULL;
-    if (!cmd || read_all(fd, cmd, hdr[0]) || (input && read_all(fd, input, hdr[1]))) {
-        free(cmd);
-        free(input);
-        return;
+    if (magic == 0xff) {
+        if (read_all(fd, hdr, sizeof hdr) || hdr[0] == 0 || hdr[0] > MAX_REQUEST || hdr[1] > MAX_REQUEST) {
+            logf_("bad request header%s%s", "", "");
+            return;
+        }
+        cmd = calloc(1, hdr[0] + 1);
+        input = hdr[1] ? malloc(hdr[1]) : NULL;
+        if (!cmd || read_all(fd, cmd, hdr[0]) || (input && read_all(fd, input, hdr[1]))) {
+            free(cmd);
+            free(input);
+            return;
+        }
+    } else {
+        /* the old framing: what follows came with the first byte, in the same send() */
+        cmd = calloc(1, BARE_REQUEST);
+        if (!cmd)
+            return;
+        cmd[0] = (char)magic;
+        ssize_t n = recv(fd, cmd + 1, BARE_REQUEST - 2, MSG_DONTWAIT);
+        (void)n;    /* a one-byte command, or the rest of it; cmd stays terminated */
     }
     int detached = !strncmp(cmd, "detached ", 9);
     const char *c = detached ? cmd + 9 : cmd;

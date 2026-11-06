@@ -32,7 +32,7 @@ pkg_install() {
                 case "$p" in
                     x11-xserver-utils) out+=(xrandr) ;;
                     xauth) out+=(xorg-x11-xauth) ;;
-                    x11-utils) out+=(xdpyinfo) ;;
+                    x11-utils) out+=(xdpyinfo xwininfo) ;;
                     xvfb) out+=(xorg-x11-server-Xvfb) ;;
                     pipewire-bin) out+=(pipewire-utils) ;;
                     dmsetup) out+=(device-mapper) ;;
@@ -448,15 +448,21 @@ image_profile() {
     p=$(kit_stamp 2>/dev/null | sed -n 's/^profile=//p')
     echo "${p:-2019.20.4.2-model3}"
 }
-# profile_value PROFILE KEY: car, center, cluster, mit_shm, maps, services of a profile (mcu2_patch.py --info)
+# profile_value PROFILE KEY: car, can_db, center, cluster, mit_shm, maps, services of a profile (mcu2_patch.py --info)
 profile_value() {
     python3 "$KIT" --info --profile "$1" 2>/dev/null | sed -n "s/^$2=//p"
 }
+# is_sx: the image is a Model S/X firmware (any version); PROFILE as start.sh sets it
+is_sx() {
+    [ "$(profile_value "${PROFILE:-$(image_profile)}" car)" = models ]
+}
 # can_db [PROFILE]: the CAN signal database for the image's car type (vehicle/work/, made by
-# extract-can-db.py; the Model 3's has the old name can-db.json)
+# extract-can-db.py; the Model 3's has the old name can-db.json). A profile's can_db key: its own
+# file, when messages differ from the other firmware of that car.
 can_db() {
-    local car
-    car=$(profile_value "${1:-${PROFILE:-$(image_profile)}}" car)
+    local car profile=${1:-${PROFILE:-$(image_profile)}}
+    car=$(profile_value "$profile" can_db)
+    [ -n "$car" ] || car=$(profile_value "$profile" car)
     if [ -z "$car" ] || [ "$car" = model3 ]; then echo vehicle/work/can-db.json; else echo "vehicle/work/can-db-$car.json"; fi
 }
 # look_choices color|wheels|performance: the names --color/--wheels/--performance take for this

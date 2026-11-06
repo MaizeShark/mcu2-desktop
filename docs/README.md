@@ -10,7 +10,7 @@
 | [mitm.md](mitm.md) | watching the car's HTTPS traffic: `--mitm-cert` and a mitmproxy setup |
 | [development.md](development.md) | working on this repo: the sudo-free sandbox, the patch kit, testing, conventions |
 
-Both firmwares are covered: the Model 3's 2019.20.4.2 and the Model S/X's 2026.8.3 (its setup:
+Both cars are covered: the Model 3's 2019.20.4.2 and the Model S/X's 2026.8.3 (2025.20.6 too, sandbox-tested only; setup:
 [setup.md](setup.md#3-the-image); how it differs: [how-it-works.md](how-it-works.md#the-model-sx-202683);
 each feature's section in [features.md](features.md) says what works on it).
 

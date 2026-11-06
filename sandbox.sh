@@ -67,6 +67,22 @@ QARGS="--touch evdev,autorange"
 # the S/X profile's startup.sh runs QtCar --emulated (the panels count as on, see its kit.py)
 [ -n "$SX" ] && QARGS="$QARGS --emulated"
 
+# S/X: every service runs as root here, and the firmware's D-Bus policy lets each own only its names
+# as its own user. Sandbox only: never in the kit, the real chroot runs them as the firmware's users.
+if [ -n "$SX" ] && [ ! -e "$ROOT/etc/dbus-1/system.d/zz-sandbox-root.conf" ]; then
+    cat > "$ROOT/etc/dbus-1/system.d/zz-sandbox-root.conf" <<'EOF'
+<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<!-- sandbox only (sandbox.sh runs every service as root in the container) -->
+<busconfig>
+  <policy user="root">
+    <allow own="*"/>
+    <allow send_destination="*"/>
+  </policy>
+</busconfig>
+EOF
+fi
+
 cat > "$ROOT/sandbox-qtcar.sh" <<'EOF'
 #!/bin/sh
 # written by sandbox.sh: QtCar (or SB_BIN, e.g. QtCarCluster) as container root, optionally under

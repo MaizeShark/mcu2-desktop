@@ -13,7 +13,7 @@ Everything here is needed once. Afterwards `./tesla check` shows whether all is 
 - **sudo**: the chroot, mounts and kernel modules need root. `./tesla` asks for the password
   once per start.
 - **Your own dump of an MCU2 (Intel Atom) firmware**: the Model 3's 2019.20.4.2 or the Model
-  S/X's 2026.8.3 (x86_64), or both (one image each). This repository contains no firmware and no
+  S/X's 2026.8.3 or 2025.20.6 (x86_64), or several (one image each). This repository contains no firmware and no
   files from it, and nothing here downloads it. Only these versions were ever tested: the patch kit
   checks every file it patches and refuses unknown versions.
 
@@ -35,7 +35,7 @@ pip install --user unicorn pyelftools        # --vehicle (extracts the CAN datab
 Fedora:
 
 ```sh
-sudo dnf install xorg-x11-server-Xvfb x11vnc xdpyinfo curl python3 e2fsprogs cargo   # always
+sudo dnf install xorg-x11-server-Xvfb x11vnc xdpyinfo xwininfo curl python3 e2fsprogs cargo   # always
 sudo dnf install krdc                        # a VNC viewer (or virt-viewer, remmina, tigervnc)
 sudo dnf install alsa-utils sox pipewire-utils kernel-modules-extra   # --audio (snd-aloop)
 sudo dnf install ffmpeg-free akmod-v4l2loopback   # --camera (v4l2loopback: RPM Fusion)
@@ -100,6 +100,19 @@ SANDBOX_ROOT=./sandbox/rootfs-s
 EOF
 ./tesla --config tesla-s.conf build-image --fresh          # (--maps US: maps, section 4)
 ./tesla --config tesla-s.conf start --vehicle --audio --gps 37.4419,-122.1430
+```
+
+The older **2025.20.6** works the same way, with its own names (so far tested in the sandbox only,
+not yet in a real start):
+
+```sh
+sudo unsquashfs -d mcu2s-2025-original path/to/2025.20.6.mcu2
+cat > tesla-s2025.conf <<EOF
+IMAGE=./mcu2s2025.ext4
+DUMP=./mcu2s-2025-original
+SANDBOX_ROOT=./sandbox/rootfs-s2025
+EOF
+./tesla --config tesla-s2025.conf build-image --fresh
 ```
 
 Every `./tesla` command takes `--config tesla-s.conf` for it. The viewer shows the center display

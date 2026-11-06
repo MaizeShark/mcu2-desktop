@@ -9,6 +9,7 @@ in QDataStream format). They survive restarts and config changes.
   qtcar-settings.py DB NAME                    show one
   qtcar-settings.py DB NAME=VALUE [...]        set (true/false, integers, decimals, else text)
   qtcar-settings.py DB -d NAME                 delete (QtCar falls back to its default)
+  qtcar-settings.py DB --location NAME=LAT,LON set a location value (a list of two numbers as text)
 
 A missing DB is created with QtCar's schema (use --owner to give it to the tesla user).
 """
@@ -17,7 +18,7 @@ import argparse, os, sqlite3, struct, sys, time
 SCHEMA = ("CREATE TABLE IF NOT EXISTS data (key TEXT PRIMARY KEY,value BLOB,time INTEGER,version INTEGER);"
           "CREATE INDEX IF NOT EXISTS data_key_idx on data (key);")
 # QVariant type ids (Qt 4)
-T_BOOL, T_INT, T_UINT, T_LONGLONG, T_DOUBLE, T_STRING = 1, 2, 3, 4, 6, 10
+T_BOOL, T_INT, T_UINT, T_LONGLONG, T_DOUBLE, T_LIST, T_STRING = 1, 2, 3, 4, 6, 9, 10
 
 
 def decode(blob):
@@ -54,6 +55,15 @@ def encode(value):
     return struct.pack(">IBI", T_STRING, 0, len(s)) + s
 
 
+def encode_location(text):
+    """A location data value: QVariantList of two QStrings, as QtCar stores them."""
+    lat, lon = (float(x) for x in text.split(","))
+    out = struct.pack(">IBI", T_LIST, 0, 2)
+    for v in (lat, lon):
+        out += encode("%.6f" % v)
+    return out
+
+
 def parse_value(text):
     if text.lower() in ("true", "false"):
         return text.lower() == "true"
@@ -70,11 +80,12 @@ def main():
     ap.add_argument("db")
     ap.add_argument("items", nargs="*", help="NAME or NAME=VALUE")
     ap.add_argument("-d", "--delete", action="append", default=[], metavar="NAME")
+    ap.add_argument("--location", action="append", default=[], metavar="NAME=LAT,LON")
     ap.add_argument("--owner", help="uid:gid for a newly created DB")
     args = ap.parse_args()
 
     new = not os.path.exists(args.db)
-    if new and not any("=" in i for i in args.items):
+    if new and not args.location and not any("=" in i for i in args.items):
         sys.exit("%s does not exist" % args.db)
     if new:
         os.makedirs(os.path.dirname(os.path.abspath(args.db)), exist_ok=True)
@@ -90,7 +101,10 @@ def main():
         else:
             row = con.execute("SELECT value FROM data WHERE key=?", ("DataValues/" + item,)).fetchone()
             print("%s = %s" % (item, "<not stored>" if row is None else decode(row[0])))
-    if not args.items and not args.delete:
+    for item in args.location:
+        name, val = item.split("=", 1)
+        con.execute("INSERT OR REPLACE INTO data VALUES (?,?,?,1)", ("DataValues/" + name, encode_location(val), now))
+    if not args.items and not args.delete and not args.location:
         for key, val in con.execute("SELECT key, value FROM data WHERE key LIKE 'DataValues/%' ORDER BY key"):
             print("%s = %s" % (key[len("DataValues/"):], decode(val)))
     con.commit()

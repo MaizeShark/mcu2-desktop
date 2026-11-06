@@ -25,6 +25,7 @@ earlier ones where they disagree. Up to session 7 they call the unit "MCU3" and 
 | `session16-2026-10-31.md` | A cellular modem: the car's oFono/Telit stack, what the status bar reads, the host's ModemManager as the car's LTE (`--cellular`), the stick's modem packages; sandbox SELinux fix |
 | `session17-2026-11-03.md` | `--mitm-cert`: the Model 3's TLS stores (OpenSSL, Qt 4.8, CEF's NSS 3.39), a per-run CA for mitmproxy, the PKCS#11 3.2 trust pitfall |
 | `session19-2026-11-06.md` | BeamNG.drive drives the UI (`--beamng`): the game's protocols, the mod, the bridge, tested with a stand-in for the game |
+| `session20-2026-11-06.md` | the older Model S/X firmware 2025.20.6: a profile on top of 2026's tables, its glibc, Chromium 127's crashpad, the escalator's old framing (sandbox-tested) |
 | `model-s-parity.md` | the Model S/X parity list (verified / untested / missing), the agreed order and its progress |
 | `voice-and-calls.md` | survey: voice commands (both firmwares' recognizers, the mic path through AudioWeaver) and hands-free call audio (SCO over HCI through the bridge); plan |
 | `ideas.md` | ideas that aren't planned yet (a real HW2.5 Autopilot computer on the PC's Ethernet) |

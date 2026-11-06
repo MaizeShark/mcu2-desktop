@@ -50,6 +50,7 @@ check_host() {
         tool fail xdpyinfo x11-utils "waits for the screen"
     fi
     tool fail curl curl "talks to QtCar"
+    is_sx && tool warn xwininfo x11-utils "touches in the S/X Browser and Theater"
     if python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
         chk ok "python3 $(python3 -c 'import platform; print(platform.python_version())')"
     else

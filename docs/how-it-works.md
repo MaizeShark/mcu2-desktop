@@ -80,7 +80,9 @@ flowchart LR
 
 ## The Model S/X (2026.8.3)
 
-The same pieces, with these differences (profile `mcu2-patchkit/profiles/2026.8.3-models/`):
+The same pieces, with these differences (profile `mcu2-patchkit/profiles/2026.8.3-models/`; the
+older 2025.20.6, `profiles/2025.20.6-models/`, uses its tables with its own patches, its own CAN
+database and libraries for glibc 2.35, and its escalator client frames requests differently):
 
 - **Two screens:** the center display (1200x1920) and the instrument cluster (1920x720,
   QtCarCluster, the car's `--ic --window 1.5`) are two screens of one Xvfb; the cluster has its own
