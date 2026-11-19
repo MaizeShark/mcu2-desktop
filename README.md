@@ -37,7 +37,7 @@ music stick, a backup camera from any V4L2 source, and offline navigation.
   patches and refuses other versions. The Model S/X runs with `./tesla --config tesla-s.conf ...`
   (see [docs/setup.md](docs/setup.md)).
 - **Made with an LLM.** Sessions 1 and 2 (May 2026) were done with Claude Sonnet, all later ones
-  with Claude Opus 5 & 5.5 (about 6.5M tokens), guided and tested by a human. The session notes in [`notes/`](notes/)
+  with Claude Opus 5 & 5.5 (about 2.3B tokens), guided and tested by a human. The session notes in [`notes/`](notes/)
   show how.
 - **Demonstration Video** [Youtube Video](https://youtu.be/45vGXZr9VNI)
 
